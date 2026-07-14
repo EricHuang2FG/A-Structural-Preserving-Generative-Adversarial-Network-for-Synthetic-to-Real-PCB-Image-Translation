@@ -1,0 +1,15 @@
+.DS_Store
+
+.venv
+
+__pycache__
+
+run.sh
+
+data/open-schematics/*
+data/synthetic/*
+
+!data/open-schematics/.gitkeep
+!data/synthetic/.gitkeep
+
+src/data_processing/process.sh
