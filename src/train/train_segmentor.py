@@ -8,6 +8,7 @@ from torch.utils.data import random_split, DataLoader
 from src.data_processing.datasets import PCBSegmentorDataset
 from src.model.segmentor import UNetSegmentor
 from src.train.utils import plot_training_validation_curves
+from src.inference.inference_segmentor import evaluate_segmentor
 from src.utils.constants import (
     CLASS_TO_SEMANTIC_INDEX_MAPPING,
     SEED,
@@ -19,36 +20,6 @@ from src.utils.constants import (
     SEGMENTOR_MODEL_BEST_MODEL_DIRECTORY,
     SEGMENTOR_MODEL_TRAINING_CURVE_DIRECTORY,
 )
-
-
-def evaluate_segmentor(
-    model: UNetSegmentor,
-    loader: DataLoader,
-    device: torch.device,
-    num_classes: int = len(CLASS_TO_SEMANTIC_INDEX_MAPPING),
-) -> tuple[float, float]:
-    model.eval()
-    curr_error: float = 0.0
-    curr_loss: float = 0.0
-    total_pixels: int = 0
-
-    with torch.no_grad():
-        images: torch.Tensor
-        masks: torch.Tensor
-        for images, masks in loader:
-            images = images.to(device)
-            masks = masks.to(device)
-
-            logits: torch.Tensor = model(images)
-            loss: torch.Tensor = UNetSegmentor.criterion(logits, masks, num_classes)
-
-            predictions: torch.Tensor = torch.argmax(logits, dim=1)
-            num_pixels: int = masks.numel()
-            total_pixels += num_pixels
-            curr_error += torch.sum((predictions != masks).float()).item()
-            curr_loss += loss.item() * num_pixels
-
-    return curr_loss / total_pixels, curr_error / total_pixels
 
 
 def train_segmentor(
