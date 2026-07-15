@@ -2,6 +2,7 @@ RAW_DATA_DIR: str = "data/open-schematics"
 
 BOARD_RENDER_HEIGHT: int = 1020
 BOARD_RENDER_WIDTH: int = 1020
+TARGET_IMAGE_SIZE: int = 256  # square
 RENDER_QUALITY: str = "high"
 
 BOARD_SIDE_TOP: str = "top"
@@ -42,3 +43,14 @@ CLASS_TO_SEMANTIC_INDEX_MAPPING: dict[str, int] = {
 GAN_IMAGE_SIZE: int = 512
 
 SEED: int = 42
+EARLY_STOPPING_PATIENCE: int = 6
+
+MODEL_NAME_TEMPLATE: str = (
+    "{{ model_name }}_bs{{ batch_size }}_lr{{ learning_rate }}_{{ epoch }}.model"
+)
+TRAINING_CURVE_FILE_NAME_TEMPLATE: str = (
+    "{{ model_name }}_bs{{ batch_size }}_lr{{ learning_rate }}_{{ type }}.pdf"
+)
+SEGMENTOR_MODEL_CHECKPOINTS_DIRECTORY: str = "models/segmentor/checkpoints"
+SEGMENTOR_MODEL_BEST_MODEL_DIRECTORY: str = "models/segmentor/best"
+SEGMENTOR_MODEL_TRAINING_CURVE_DIRECTORY: str = "models/segmentor/training_curves"

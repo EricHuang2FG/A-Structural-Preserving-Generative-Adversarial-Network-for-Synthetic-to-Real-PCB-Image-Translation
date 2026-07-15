@@ -20,4 +20,12 @@ data/cyclegan_data/*
 !data/synthetic_split/.gitkeep
 !data/cyclegan_data/.gitkeep
 
+models/segmentor/best/*
+models/segmentor/checkpoints/*
+models/segmentor/training_curves/*
+
+!models/segmentor/best/.gitkeep
+!models/segmentor/checkpoints/.gitkeep
+!models/segmentor/training_curves/.gitkeep
+
 src/data_processing/process.sh
