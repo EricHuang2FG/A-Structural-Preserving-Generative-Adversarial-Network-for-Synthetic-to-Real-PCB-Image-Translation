@@ -22,3 +22,23 @@ REFERENCE_TO_CLASS_MAPPING: dict[str, str] = {
     "K": "relay",
 }
 DEFAULT_CLASS: str = "other"
+
+CLASS_TO_SEMANTIC_INDEX_MAPPING: dict[str, int] = {
+    "background": 0,
+    "resistor": 1,
+    "capacitor": 2,
+    "inductor": 3,
+    "ic": 4,
+    "transistor": 5,
+    "diode": 6,
+    "connector": 7,
+    "switch": 8,
+    "crystal": 9,
+    "fuse": 10,
+    "relay": 11,
+    "other": 12,
+}
+
+GAN_IMAGE_SIZE: int = 512
+
+SEED: int = 42

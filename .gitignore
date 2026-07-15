@@ -8,8 +8,16 @@ run.sh
 
 data/open-schematics/*
 data/synthetic/*
+data/PCB-DSLR/*
+data/real_images/*
+data/synthetic_split/*
+data/cyclegan_data/*
 
 !data/open-schematics/.gitkeep
 !data/synthetic/.gitkeep
+!data/PCB-DSLR/.gitkeep
+!data/real_images/.gitkeep
+!data/synthetic_split/.gitkeep
+!data/cyclegan_data/.gitkeep
 
 src/data_processing/process.sh

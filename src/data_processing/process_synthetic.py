@@ -2,6 +2,7 @@ import os
 import time
 import json
 import shutil
+import random
 import subprocess
 
 import wx
@@ -18,7 +19,9 @@ from src.utils.constants import (
     BOARD_SIDE_BOTTOM,
     BOARD_SIDE_TOP,
     REFERENCE_TO_CLASS_MAPPING,
+    CLASS_TO_SEMANTIC_INDEX_MAPPING,
     DEFAULT_CLASS,
+    SEED,
 )
 
 
@@ -314,13 +317,14 @@ def get_pcb_to_image_coordinate_transformation(
     return transform
 
 
-def get_annotation_mask(
+def get_annotation_instance_mask(
     footprints: list[dict],
     side: str,
     pcb_to_image_coordinate_transformation: Callable,
     edge_bbox: tuple[float, float, float, float],
     image_size: tuple[float, float] = (BOARD_RENDER_WIDTH, BOARD_RENDER_HEIGHT),
 ) -> tuple[np.ndarray, list[dict]]:
+    # builds the instance mask and the annotations
     image_width: float
     image_height: float
     image_width, image_height = image_size
@@ -409,6 +413,25 @@ def create_segmentation_mask_visualization(mask_path: str, image_path: str) -> N
     print(f"Visualization overlay saved to {overlay_path}")
 
 
+def create_semantic_mask(
+    instance_mask_path: str, annotations_path: str, output_path: str
+) -> None:
+    instance_mask: np.ndarray = cv2.imread(instance_mask_path, cv2.IMREAD_UNCHANGED)
+    f: TextIO
+    with open(annotations_path, "r", encoding="utf-8") as f:
+        annotations: list[dict] = json.load(f)
+
+    semantic_mask: np.ndarray = np.zeros_like(instance_mask, dtype=np.uint8)
+    annotation: dict
+    for annotation in annotations:
+        class_index: int = CLASS_TO_SEMANTIC_INDEX_MAPPING.get(
+            annotation["class_name"], 0
+        )
+        semantic_mask[instance_mask == annotation["id"]] = class_index
+
+    cv2.imwrite(output_path, semantic_mask)
+
+
 def process_pcb(pcb_file_path: str, output_directory: str) -> None:
     if not os.path.exists(pcb_file_path):
         raise FileNotFoundError(f"{pcb_file_path} does not exist.")
@@ -428,7 +451,7 @@ def process_pcb(pcb_file_path: str, output_directory: str) -> None:
         )
         segmentation_mask: np.ndarray
         annotations: list[dict]
-        segmentation_mask, annotations = get_annotation_mask(
+        segmentation_mask, annotations = get_annotation_instance_mask(
             geometry["footprints"],
             side,
             pcb_to_image_coordinate_transformation,
@@ -444,6 +467,11 @@ def process_pcb(pcb_file_path: str, output_directory: str) -> None:
             json.dump(annotations, f, indent=2)
 
         create_segmentation_mask_visualization(segmentation_mask_path, image_path)
+
+        semantic_mask_path: str = f"{output_directory}/{side}_semantic_mask.png"
+        create_semantic_mask(
+            segmentation_mask_path, annotations_path, semantic_mask_path
+        )
 
         print(f"Segmentation mask and annotations **{side}** saved for {pcb_file_path}")
 
@@ -507,7 +535,52 @@ def process_multiple_pcbs(
             print(f"{file_path}: {error_message}")
 
 
+def split_dataset(
+    source_directory: str,
+    train_directory: str,
+    test_directory: str,
+    test_ratio: float = 0.1,
+    seed: int = SEED,
+) -> None:
+    os.makedirs(train_directory, exist_ok=True)
+    os.makedirs(test_directory, exist_ok=True)
+
+    pcb_folders: list[str] = [
+        folder
+        for folder in os.listdir(source_directory)
+        if os.path.isdir(os.path.join(source_directory, folder))
+    ]
+
+    # seed random
+    random.seed(seed)
+    random.shuffle(pcb_folders)
+
+    split_index: int = int(len(pcb_folders) * (1 - test_ratio))
+
+    train_folders: list[str] = pcb_folders[:split_index]
+    test_folders: list[str] = pcb_folders[split_index:]
+
+    print(f"Total number of PCBs: {len(pcb_folders)}")
+    print(f"Train PCBs: {len(train_folders)}")
+    print(f"Test PCBs: {len(test_folders)}")
+
+    for folder in train_folders:
+        shutil.copytree(
+            os.path.join(source_directory, folder),
+            os.path.join(train_directory, folder),
+        )
+
+    for folder in test_folders:
+        shutil.copytree(
+            os.path.join(source_directory, folder),
+            os.path.join(test_directory, folder),
+        )
+
+
 if __name__ == "__main__":
     wx.Log.SetLogLevel(wx.LOG_Error)
     app: wx.App = wx.App(False)
-    process_multiple_pcbs("data/open-schematics", "data/synthetic", 1001, 1500)
+    # process_multiple_pcbs("data/open-schematics", "data/synthetic", 1701, 1800)
+    split_dataset(
+        "data/synthetic", "data/synthetic_split/train", "data/synthetic_split/test"
+    )
