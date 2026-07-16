@@ -6,6 +6,7 @@ import numpy as np
 
 from torch.utils.data import Dataset
 
+from src.utils.utils import image_to_tensor
 from src.utils.constants import TARGET_IMAGE_SIZE
 
 
@@ -52,28 +53,14 @@ class PCBSegmentorDataset(Dataset):
         mask_path: str
         image_path, mask_path = self.data_paths[index]
 
-        image: np.ndarray = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-        if image.shape[2] == 4:
-            image = image[:, :, :3]  # if RGBA, remove alpha channel
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        mask: np.ndarray = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
-
-        image = cv2.resize(
-            image,
-            (self.target_image_size, self.target_image_size),
-            interpolation=cv2.INTER_LINEAR,
+        image_tensor: torch.Tensor = image_to_tensor(
+            image_path, size=self.target_image_size
         )
+        mask: np.ndarray = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
         mask = cv2.resize(
             mask,
             (self.target_image_size, self.target_image_size),
             interpolation=cv2.INTER_NEAREST,
-        )
-
-        # normalize to between [-1, 1]
-        # convert from BGR to RGB
-        image_tensor: torch.Tensor = (
-            torch.from_numpy(image).permute(2, 0, 1).float() / 127.5 - 1.0
         )
         mask_tensor: torch.Tensor = torch.from_numpy(mask).long()
 

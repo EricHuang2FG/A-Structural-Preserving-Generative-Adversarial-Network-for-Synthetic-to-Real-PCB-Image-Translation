@@ -31,3 +31,15 @@ def plot_training_validation_curves(
     plt.legend(loc="best")
     plt.savefig(output_path_template.replace("{{ type }}", "loss"))
     plt.show()
+
+    # save the raw metrics
+    metrics_path: str = output_path_template.replace("{{ type }}", "metrics")
+    metrics_path = metrics_path.rsplit(".", 1)[0] + ".npz"
+
+    np.savez(
+        metrics_path,
+        train_error=train_error,
+        validation_error=validation_error,
+        train_loss=train_loss,
+        validation_loss=validation_loss,
+    )

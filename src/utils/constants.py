@@ -40,13 +40,11 @@ CLASS_TO_SEMANTIC_INDEX_MAPPING: dict[str, int] = {
     "other": 12,
 }
 
-GAN_IMAGE_SIZE: int = 512
-
 SEED: int = 42
 EARLY_STOPPING_PATIENCE: int = 6
 
 MODEL_NAME_TEMPLATE: str = (
-    "{{ model_name }}_bs{{ batch_size }}_lr{{ learning_rate }}_{{ epoch }}.model"
+    "{{ model_name }}_bs{{ batch_size }}_lr{{ learning_rate }}_epoch{{ epoch }}.model"
 )
 TRAINING_CURVE_FILE_NAME_TEMPLATE: str = (
     "{{ model_name }}_bs{{ batch_size }}_lr{{ learning_rate }}_{{ type }}.pdf"

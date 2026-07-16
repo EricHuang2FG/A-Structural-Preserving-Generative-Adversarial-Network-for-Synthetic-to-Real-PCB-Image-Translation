@@ -26,7 +26,7 @@ def train_segmentor(
     model: UNetSegmentor,
     data_root_directory: str,
     num_classes: int = len(CLASS_TO_SEMANTIC_INDEX_MAPPING),
-    validation_split_fraction: float = 0.15,
+    validation_split_fraction: float = 0.1,
     batch_size: int = 16,
     learning_rate: float = 1e-4,
     num_epochs: int = 30,
@@ -34,6 +34,8 @@ def train_segmentor(
     target_image_size: int = TARGET_IMAGE_SIZE,
 ) -> None:
     torch.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    np.random.seed(SEED)
 
     os.makedirs(SEGMENTOR_MODEL_BEST_MODEL_DIRECTORY, exist_ok=True)
     os.makedirs(SEGMENTOR_MODEL_CHECKPOINTS_DIRECTORY, exist_ok=True)
@@ -123,20 +125,22 @@ def train_segmentor(
             f"Validation err: {validation_error[epoch]:.4f}, Validation loss: {validation_loss[epoch]:.4f}"
         )
 
-        # save checkpoint every 3 epochs
-        model_name: str = (
+        # save checkpoint every 10 epochs
+        model_name_no_epoch: str = (
             MODEL_NAME_TEMPLATE.replace(
                 "{{ model_name }}",
                 f"{model.name}",
             )
             .replace("{{ batch_size }}", str(batch_size))
             .replace("{{ learning_rate }}", str(learning_rate))
-            .replace("{{ epoch }}", str(epoch + 1))
         )
         if epoch % 10 == 0 and epoch != 0:
             torch.save(
                 model.state_dict(),
-                os.path.join(SEGMENTOR_MODEL_CHECKPOINTS_DIRECTORY, model_name),
+                os.path.join(
+                    SEGMENTOR_MODEL_CHECKPOINTS_DIRECTORY,
+                    model_name_no_epoch.replace("{{ epoch }}", str(epoch + 1)),
+                ),
             )
 
         # check if the current model is the best model and perform
@@ -146,12 +150,15 @@ def train_segmentor(
             epochs_without_improvement = 0
             torch.save(
                 model.state_dict(),
-                os.path.join(SEGMENTOR_MODEL_BEST_MODEL_DIRECTORY, model_name),
+                os.path.join(
+                    SEGMENTOR_MODEL_BEST_MODEL_DIRECTORY,
+                    model_name_no_epoch.replace("_epoch{{ epoch }}", "_best"),
+                ),
             )
         else:
             epochs_without_improvement += 1
             if epochs_without_improvement >= early_stopping_patience:
-                print(f"Early stoppoing on epoch {epoch + 1}")
+                print(f"Early stopping on epoch {epoch + 1}")
                 break
 
     end_time: float = time.perf_counter()
@@ -170,3 +177,7 @@ def train_segmentor(
         .replace("{{ batch_size }}", str(batch_size))
         .replace("{{ learning_rate }}", str(learning_rate)),
     )
+
+
+if __name__ == "__main__":
+    train_segmentor(UNetSegmentor(), "data/synthetic_split/train")
