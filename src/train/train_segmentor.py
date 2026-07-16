@@ -2,12 +2,12 @@ import os
 import time
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 
 from torch.utils.data import random_split, DataLoader
 
 from src.data_processing.datasets import PCBSegmentorDataset
 from src.model.segmentor import UNetSegmentor
-from src.train.utils import plot_training_validation_curves
 from src.inference.inference_segmentor import evaluate_segmentor
 from src.utils.constants import (
     CLASS_TO_SEMANTIC_INDEX_MAPPING,
@@ -198,19 +198,70 @@ def train_segmentor(
     print(f"Total time elapsed: {(end_time - start_time):.4f}")
 
     # plot the training and validation curves
-    plot_training_validation_curves(
+    plot_segmentor_training_validation_curves(
         train_error[:total_epochs_ran],
         train_loss[:total_epochs_ran],
         validation_error[:total_epochs_ran],
         validation_loss[:total_epochs_ran],
-        TRAINING_CURVE_FILE_NAME_TEMPLATE.replace(
-            "{{ model_name }}",
-            f"{model.name}",
-        )
-        .replace("{{ batch_size }}", str(batch_size))
-        .replace("{{ learning_rate }}", str(learning_rate)),
+        os.path.join(
+            SEGMENTOR_MODEL_TRAINING_CURVE_DIRECTORY,
+            TRAINING_CURVE_FILE_NAME_TEMPLATE.replace(
+                "{{ model_name }}",
+                f"{model.name}",
+            )
+            .replace("{{ batch_size }}", str(batch_size))
+            .replace("{{ learning_rate }}", str(learning_rate)),
+        ),
+    )
+
+
+def plot_segmentor_training_validation_curves(
+    train_error: np.ndarray,
+    train_loss: np.ndarray,
+    validation_error: np.ndarray,
+    validation_loss: np.ndarray,
+    output_path_template: str,  # must have {{ type }} in the string
+) -> None:
+    # plot the error curves
+    plt.figure()
+    plt.title("Train and Validation Error vs. Epochs")
+    num_epochs: int = len(train_error) + 1
+    plt.plot(range(1, num_epochs), train_error, label="Train Error")
+    plt.plot(range(1, num_epochs), validation_error, label="Validation Error")
+    plt.xlabel("Epoch")
+    plt.ylabel("Error")
+    plt.legend(loc="best")
+    plt.savefig(output_path_template.replace("{{ type }}", "error"))
+    plt.show()
+
+    # plot the loss curves
+    plt.figure()
+    plt.title("Train and Validation Loss vs. Epochs")
+    plt.plot(range(1, num_epochs), train_loss, label="Train Loss")
+    plt.plot(range(1, num_epochs), validation_loss, label="Validation Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend(loc="best")
+    plt.savefig(output_path_template.replace("{{ type }}", "loss"))
+    plt.show()
+
+    # save the raw metrics
+    metrics_path: str = output_path_template.replace("{{ type }}", "metrics")
+    metrics_path = metrics_path.rsplit(".", 1)[0] + ".npz"
+
+    np.savez(
+        metrics_path,
+        train_error=train_error,
+        validation_error=validation_error,
+        train_loss=train_loss,
+        validation_loss=validation_loss,
     )
 
 
 if __name__ == "__main__":
-    train_segmentor(UNetSegmentor(), "data/synthetic_split/train")
+    train_segmentor(
+        UNetSegmentor(),
+        "data/synthetic_split/train",
+        num_epochs=35,
+        checkpoint_path="models/segmentor/checkpoints/UNetSegmentor_bs16_lr0.0001_epoch29.model",
+    )

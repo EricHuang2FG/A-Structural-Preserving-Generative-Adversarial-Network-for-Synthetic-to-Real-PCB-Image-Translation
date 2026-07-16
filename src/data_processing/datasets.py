@@ -6,44 +6,22 @@ import numpy as np
 
 from torch.utils.data import Dataset
 
-from src.utils.utils import image_to_tensor
+from src.utils.utils import image_to_tensor, mask_to_binary_tensor
 from src.utils.constants import TARGET_IMAGE_SIZE
+from src.data_processing.utils import (
+    get_synthetic_data_paths_with_semantic_mask,
+)
 
 
 class PCBSegmentorDataset(Dataset):
+
     def __init__(
         self, root_directory: str, target_image_size: int = TARGET_IMAGE_SIZE
     ) -> None:
         self.target_image_size: int = target_image_size
-        self.data_paths: list[tuple[str, str]] = PCBSegmentorDataset._get_data(
-            root_directory
+        self.data_paths: list[tuple[str, str]] = (
+            get_synthetic_data_paths_with_semantic_mask(root_directory)
         )
-
-    @staticmethod
-    def _get_data(root_directory: str) -> None:
-        data_paths: list[tuple[str, str]] = []
-        skipped_data: list[str] = []
-
-        pcb_folder: str
-        for pcb_folder in sorted(os.listdir(root_directory)):
-            pcb_directory: str = os.path.join(root_directory, pcb_folder)
-
-            if not os.path.isdir(pcb_directory):
-                continue
-
-            # sample top side only
-            image_path: str = os.path.join(pcb_directory, "top_image.png")
-            mask_path: str = os.path.join(pcb_directory, "top_semantic_mask.png")
-
-            if os.path.exists(image_path) and os.path.exists(mask_path):
-                data_paths.append((image_path, mask_path))
-            else:
-                skipped_data.append(pcb_directory)
-
-        if skipped_data:
-            print(f"{len(skipped_data)} images skipped: {skipped_data}")
-
-        return data_paths
 
     def __len__(self) -> int:
         return len(self.data_paths)
@@ -65,3 +43,71 @@ class PCBSegmentorDataset(Dataset):
         mask_tensor: torch.Tensor = torch.from_numpy(mask).long()
 
         return image_tensor, mask_tensor
+
+
+class PCBSPresGANSyntheticDataset(Dataset):
+
+    def __init__(
+        self, root_directory: str, target_image_size: int = TARGET_IMAGE_SIZE
+    ) -> None:
+        self.target_image_size: int = target_image_size
+        self.data_paths: list[tuple[str, str]] = (
+            get_synthetic_data_paths_with_semantic_mask(root_directory)
+        )
+
+    def __len__(self) -> int:
+        return len(self.data_paths)
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        image_path: str
+        mask_path: str
+        image_path, mask_path = self.data_paths[index]
+
+        image_tensor: torch.Tensor = image_to_tensor(
+            image_path, size=self.target_image_size
+        )
+        mask_tensor: torch.Tensor = mask_to_binary_tensor(
+            mask_path, size=self.target_image_size
+        )
+
+        return image_tensor, mask_tensor
+
+
+class PCBSPresGANRealDataset(Dataset):
+
+    def __init__(
+        self, root_directory: str, target_image_size: int = TARGET_IMAGE_SIZE
+    ) -> None:
+        self.target_image_size: int = target_image_size
+        self.data_paths: list[str] = [
+            os.path.join(root_directory, file)
+            for file in sorted(os.listdir(root_directory))
+            if file.lower().endswith(".jpg")
+        ]  # only valid extension is .jpg (not case sensitive)
+
+    def __len__(self) -> int:
+        return len(self.data_paths)
+
+    def __getitem__(self, index: int) -> torch.Tensor:
+        return image_to_tensor(self.data_paths[index], size=self.target_image_size)
+
+
+class PCBSPresGANUnpairedDomainPair(Dataset):
+
+    def __init__(
+        self,
+        synthetic_dataset: PCBSPresGANSyntheticDataset,
+        real_dataset: PCBSPresGANRealDataset,
+    ) -> None:
+        self.synthetic_dataset: PCBSPresGANSyntheticDataset = synthetic_dataset
+        self.real_dataset: PCBSPresGANRealDataset = real_dataset
+
+    def __len__(self) -> int:
+        return max(len(self.synthetic_dataset), len(self.real_dataset))
+
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        real_a: torch.Tensor
+        mask_a: torch.Tensor
+        real_a, mask_a = self.synthetic_dataset[index % len(self.synthetic_dataset)]
+        real_b: torch.Tensor = self.real_dataset[index % len(self.real_dataset)]
+        return {"real_a": real_a, "mask_a": mask_a, "real_b": real_b}

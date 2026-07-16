@@ -52,3 +52,7 @@ TRAINING_CURVE_FILE_NAME_TEMPLATE: str = (
 SEGMENTOR_MODEL_CHECKPOINTS_DIRECTORY: str = "models/segmentor/checkpoints"
 SEGMENTOR_MODEL_BEST_MODEL_DIRECTORY: str = "models/segmentor/best"
 SEGMENTOR_MODEL_TRAINING_CURVE_DIRECTORY: str = "models/segmentor/training_curves"
+
+SPRESGAN_MODEL_CHECKPOINTS_DIRECTORY: str = "models/spresgan/checkpoints"
+SPRESGAN_MODEL_BEST_MODEL_DIRECTORY: str = "models/spresgan/best"
+SPRESGAN_MODEL_TRAINING_CURVE_DIRECTORY: str = "models/spresgan/training_curves"

@@ -23,9 +23,27 @@ data/cyclegan_data/*
 models/segmentor/best/*
 models/segmentor/checkpoints/*
 models/segmentor/training_curves/*
+models/cyclegan/checkpoints/*
 
 !models/segmentor/best/.gitkeep
 !models/segmentor/checkpoints/.gitkeep
 !models/segmentor/training_curves/.gitkeep
+!models/cyclegan/checkpoints/.gitkeep
+
+outputs/cyclegan/images/*
+
+models/spresgan/best/*
+models/spresgan/checkpoints/*
+models/spresgan/training_curves/*
+
+!models/spresgan/best/.gitkeep
+!models/spresgan/checkpoints/.gitkeep
+!models/spresgan/training_curves/.gitkeep
+
+!outputs/cyclegan/images/.gitkeep
 
 src/data_processing/process.sh
+
+pytorch-CycleGAN-and-pix2pix/
+
+src/inference/inference_cyclegan.sh
