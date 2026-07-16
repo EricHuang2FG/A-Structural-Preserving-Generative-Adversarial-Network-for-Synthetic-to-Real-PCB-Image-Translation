@@ -32,6 +32,7 @@ def train_segmentor(
     num_epochs: int = 30,
     early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
     target_image_size: int = TARGET_IMAGE_SIZE,
+    checkpoint_path: str | None = None,
 ) -> None:
     torch.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED)
@@ -77,14 +78,44 @@ def train_segmentor(
     train_loss: np.ndarray = np.zeros(num_epochs)
     validation_loss: np.ndarray = np.zeros(num_epochs)
 
+    start_epoch: int = 0
     best_validation_loss: float = float("inf")
     epochs_without_improvement: int = 0
+    total_epochs_ran: int = 0
+    if checkpoint_path is not None:
+        checkpoint: dict = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+        total_epochs_ran = checkpoint["epoch"] + 1
+        start_epoch = total_epochs_ran
+        best_validation_loss = checkpoint["best_validation_loss"]
+        epochs_without_improvement = checkpoint["epochs_without_improvement"]
+
+        checkpoint_train_error: np.ndarray = checkpoint["train_error"]
+        checkpoint_train_loss: np.ndarray = checkpoint["train_loss"]
+        checkpoint_validation_error: np.ndarray = checkpoint["validation_error"]
+        checkpoint_validation_loss: np.ndarray = checkpoint["validation_loss"]
+
+        train_error[: len(checkpoint_train_error)] = checkpoint_train_error
+        train_loss[: len(checkpoint_train_loss)] = checkpoint_train_loss
+        validation_error[: len(checkpoint_validation_error)] = (
+            checkpoint_validation_error
+        )
+        validation_loss[: len(checkpoint_validation_loss)] = checkpoint_validation_loss
+
+    model_name_no_epoch: str = (
+        MODEL_NAME_TEMPLATE.replace(
+            "{{ model_name }}",
+            f"{model.name}",
+        )
+        .replace("{{ batch_size }}", str(batch_size))
+        .replace("{{ learning_rate }}", str(learning_rate))
+    )
 
     start_time: float = time.perf_counter()
-    total_epochs_ran: int = 0
-
     epoch: int
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         model.train()
 
         curr_train_loss: float = 0.0
@@ -125,24 +156,6 @@ def train_segmentor(
             f"Validation err: {validation_error[epoch]:.4f}, Validation loss: {validation_loss[epoch]:.4f}"
         )
 
-        # save checkpoint every 10 epochs
-        model_name_no_epoch: str = (
-            MODEL_NAME_TEMPLATE.replace(
-                "{{ model_name }}",
-                f"{model.name}",
-            )
-            .replace("{{ batch_size }}", str(batch_size))
-            .replace("{{ learning_rate }}", str(learning_rate))
-        )
-        if epoch % 10 == 0 and epoch != 0:
-            torch.save(
-                model.state_dict(),
-                os.path.join(
-                    SEGMENTOR_MODEL_CHECKPOINTS_DIRECTORY,
-                    model_name_no_epoch.replace("{{ epoch }}", str(epoch + 1)),
-                ),
-            )
-
         # check if the current model is the best model and perform
         # early stopping check
         if validation_loss[epoch] < best_validation_loss:
@@ -160,6 +173,26 @@ def train_segmentor(
             if epochs_without_improvement >= early_stopping_patience:
                 print(f"Early stopping on epoch {epoch + 1}")
                 break
+
+        # save checkpoint every 2 epochs
+        if epoch % 2 == 0 and epoch != 0:
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_validation_loss": best_validation_loss,
+                    "epochs_without_improvement": epochs_without_improvement,
+                    "train_loss": train_loss,
+                    "validation_loss": validation_loss,
+                    "train_error": train_error,
+                    "validation_error": validation_error,
+                },
+                os.path.join(
+                    SEGMENTOR_MODEL_CHECKPOINTS_DIRECTORY,
+                    model_name_no_epoch.replace("{{ epoch }}", str(epoch + 1)),
+                ),
+            )
 
     end_time: float = time.perf_counter()
     print(f"Total time elapsed: {(end_time - start_time):.4f}")
