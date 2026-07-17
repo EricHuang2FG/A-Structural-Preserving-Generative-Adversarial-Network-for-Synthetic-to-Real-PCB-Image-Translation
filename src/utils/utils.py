@@ -35,3 +35,8 @@ def tensor_to_image_batched(tensor: torch.Tensor) -> np.ndarray:
     )
 
     return cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+
+def normalized_tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> torch.Tensor:
+    # convert tensor with values normalized to [-1, 1] to an uint8 RGB tensor [0, 255]
+    return ((image_tensor + 1.0) * 127.5).clamp(0, 255).to(torch.uint8)

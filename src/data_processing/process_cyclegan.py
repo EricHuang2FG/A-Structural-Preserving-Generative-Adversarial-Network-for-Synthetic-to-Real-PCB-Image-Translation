@@ -39,7 +39,14 @@ def process_cyclegan_dataset(
 
     # take synthetic_split/test images into testA
     counter = 1
-    for pcb_folder in os.listdir(synthetic_test_dir):
+    for pcb_folder in sorted(
+        [
+            folder
+            for folder in os.listdir(synthetic_test_dir)
+            if os.path.isdir(os.path.join(synthetic_test_dir, folder))
+        ],
+        key=lambda s: int(s.split("_")[0]),
+    ):
         folder_path = os.path.join(synthetic_test_dir, pcb_folder)
 
         if not os.path.isdir(folder_path):

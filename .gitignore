@@ -42,8 +42,21 @@ models/spresgan/training_curves/*
 
 !outputs/cyclegan/images/.gitkeep
 
+outputs/spresgan/*
+!outputs/spresgan/.gitkeep
+
 src/data_processing/process.sh
 
 pytorch-CycleGAN-and-pix2pix/
 
 src/inference/inference_cyclegan.sh
+
+
+!models/cyclegan/checkpoints/30_net_D_A.pth
+!models/cyclegan/checkpoints/30_net_D_B.pth
+!models/cyclegan/checkpoints/30_net_G_A.pth
+!models/cyclegan/checkpoints/30_net_G_B.pth
+
+!models/segmentor/best/UNetSegmentor_bs16_lr0.0001_best.model
+
+!models/spresgan/best/SPresGAN_bs2_lr0.0002_g_a_to_b_final.model

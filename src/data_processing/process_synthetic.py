@@ -580,7 +580,7 @@ def split_dataset(
 if __name__ == "__main__":
     wx.Log.SetLogLevel(wx.LOG_Error)
     app: wx.App = wx.App(False)
-    # process_multiple_pcbs("data/open-schematics", "data/synthetic", 1701, 1800)
+    process_multiple_pcbs("data/open-schematics", "data/synthetic", 1, 1800)
     split_dataset(
         "data/synthetic", "data/synthetic_split/train", "data/synthetic_split/test"
     )

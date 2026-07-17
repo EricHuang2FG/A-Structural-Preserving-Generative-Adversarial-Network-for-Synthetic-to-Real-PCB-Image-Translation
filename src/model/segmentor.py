@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 from src.utils.constants import CLASS_TO_SEMANTIC_INDEX_MAPPING
-from src.train.metrics import dice_loss
+from src.train.losses import dice_loss
 
 
 class DownsampleBlock(nn.Module):

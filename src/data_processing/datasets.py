@@ -10,6 +10,7 @@ from src.utils.utils import image_to_tensor, mask_to_binary_tensor
 from src.utils.constants import TARGET_IMAGE_SIZE
 from src.data_processing.utils import (
     get_synthetic_data_paths_with_semantic_mask,
+    get_real_image_paths,
 )
 
 
@@ -79,11 +80,7 @@ class PCBSPresGANRealDataset(Dataset):
         self, root_directory: str, target_image_size: int = TARGET_IMAGE_SIZE
     ) -> None:
         self.target_image_size: int = target_image_size
-        self.data_paths: list[str] = [
-            os.path.join(root_directory, file)
-            for file in sorted(os.listdir(root_directory))
-            if file.lower().endswith(".jpg")
-        ]  # only valid extension is .jpg (not case sensitive)
+        self.data_paths: list[str] = get_real_image_paths(root_directory)
 
     def __len__(self) -> int:
         return len(self.data_paths)
