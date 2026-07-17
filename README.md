@@ -1,6 +1,6 @@
 Ensure that all dependences listed in `requirements.txt` are installed and that KiCad 10.0 is available.
 
-**Data Processing**
+***Data Processing***
 
 Obtain the raw Domain A data from [open-schematics](https://huggingface.co/datasets/bshada/open-schematics) by running
 
@@ -27,7 +27,8 @@ python -m src.data_processing.process_real
 
 to process the real PCB images.
 
-**Model Training**
+***Model Training***
+
 To train CycleGAN with the obtained PCB data, first run
 
 ```bash
@@ -63,7 +64,8 @@ To train the Structure-Preserving GAN (SPresGAN), run
 python -m src.train.train_spresgan
 ```
 
-**Producing Image Translations**
+***Producing Image Translations***
+
 To translate the test images using CycleGAN, run
 
 ```bash
@@ -80,7 +82,8 @@ To translate the test images using SPresGAN, run
 python -m src.inference.inference_spresgan
 ```
 
-**Evaluating Models**
+***Evaluating Models***
+
 To produce FID and mean IoU metrics for CycleGAN and SPresGAN, run
 
 ```bash
