@@ -89,6 +89,7 @@ def plot_spresgan_training_curves(
     discriminator_b_loss: np.ndarray,
     structural_loss: np.ndarray | None,
     output_path_template: str,  # must have {{ type }} in the string
+    plot: bool = False,
 ) -> None:
     num_epochs: int = len(generator_a_loss) + 1
 
@@ -102,7 +103,8 @@ def plot_spresgan_training_curves(
     plt.ylabel("Loss")
     plt.legend(loc="best")
     plt.savefig(output_path_template.replace("{{ type }}", "loss"))
-    plt.show()
+    if plot:
+        plt.show()
 
     # structural loss
     plt.figure()
@@ -112,7 +114,8 @@ def plot_spresgan_training_curves(
     plt.ylabel("Loss")
     plt.legend(loc="best")
     plt.savefig(output_path_template.replace("{{ type }}", "structure_loss"))
-    plt.show()
+    if plot:
+        plt.show()
 
     # save raw metrics
     metrics_path: str = output_path_template.replace("{{ type }}", "metrics")

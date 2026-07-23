@@ -221,6 +221,7 @@ def plot_segmentor_training_validation_curves(
     validation_error: np.ndarray,
     validation_loss: np.ndarray,
     output_path_template: str,  # must have {{ type }} in the string
+    plot: bool = False,
 ) -> None:
     # plot the error curves
     plt.figure()
@@ -232,7 +233,8 @@ def plot_segmentor_training_validation_curves(
     plt.ylabel("Error")
     plt.legend(loc="best")
     plt.savefig(output_path_template.replace("{{ type }}", "error"))
-    plt.show()
+    if plot:
+        plt.show()
 
     # plot the loss curves
     plt.figure()
@@ -243,7 +245,8 @@ def plot_segmentor_training_validation_curves(
     plt.ylabel("Loss")
     plt.legend(loc="best")
     plt.savefig(output_path_template.replace("{{ type }}", "loss"))
-    plt.show()
+    if plot:
+        plt.show()
 
     # save the raw metrics
     metrics_path: str = output_path_template.replace("{{ type }}", "metrics")
