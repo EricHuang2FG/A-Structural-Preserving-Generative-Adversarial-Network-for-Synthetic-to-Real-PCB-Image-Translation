@@ -60,3 +60,5 @@ src/inference/inference_cyclegan.sh
 !models/segmentor/best/UNetSegmentor_bs16_lr0.0001_best.model
 
 !models/spresgan/best/SPresGAN_bs2_lr0.0002_g_a_to_b_final.model
+
+run_train_trillium.sh

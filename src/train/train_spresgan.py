@@ -269,6 +269,7 @@ def train_spresgan(
         epoch_loss_structure: float = 0.0
         num_batches: int = 0
 
+        epoch_start_time: float = time.perf_counter()
         for batch in loader:
             real_a: torch.Tensor = batch["real_a"].to(device)
             real_b: torch.Tensor = batch["real_b"].to(device)
@@ -364,11 +365,14 @@ def train_spresgan(
 
         total_epochs_ran += 1
 
+        epoch_end_time: float = time.perf_counter()
+
         print(
             (
                 f"Epoch {epoch + 1}/{num_epochs}: g_loss={g_losses[epoch]:.4f} "
-                f"d_a_loss={d_a_losses[epoch]:.4f} d_b_loss={d_b_losses[epoch]:.4f}"
-                f" loss_structure={structure_losses[epoch]:.4f}"
+                f"d_a_loss={d_a_losses[epoch]:.4f} d_b_loss={d_b_losses[epoch]:.4f} "
+                f"loss_structure={structure_losses[epoch]:.4f} "
+                f"Epoch training time={(epoch_end_time - epoch_start_time):.4f} s"
             )
         )
 
