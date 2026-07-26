@@ -49,10 +49,16 @@ MODEL_NAME_TEMPLATE: str = (
 TRAINING_CURVE_FILE_NAME_TEMPLATE: str = (
     "{{ model_name }}_bs{{ batch_size }}_lr{{ learning_rate }}_{{ type }}.pdf"
 )
-SEGMENTOR_MODEL_CHECKPOINTS_DIRECTORY: str = "models/segmentor/checkpoints"
-SEGMENTOR_MODEL_BEST_MODEL_DIRECTORY: str = "models/segmentor/best"
-SEGMENTOR_MODEL_TRAINING_CURVE_DIRECTORY: str = "models/segmentor/training_curves"
+SEGMENTOR_MODEL_CHECKPOINTS_DIRECTORY: str = (
+    "/scratch/huan4397/out/segmentor/checkpoints"
+)
+SEGMENTOR_MODEL_BEST_MODEL_DIRECTORY: str = "/scratch/huan4397/out/segmentor/best"
+SEGMENTOR_MODEL_TRAINING_CURVE_DIRECTORY: str = (
+    "/scratch/huan4397/out/segmentor/training_curves"
+)
 
-SPRESGAN_MODEL_CHECKPOINTS_DIRECTORY: str = "models/spresgan/checkpoints"
-SPRESGAN_MODEL_BEST_MODEL_DIRECTORY: str = "models/spresgan/best"
-SPRESGAN_MODEL_TRAINING_CURVE_DIRECTORY: str = "models/spresgan/training_curves"
+SPRESGAN_MODEL_CHECKPOINTS_DIRECTORY: str = "/scratch/huan4397/out/spresgan/checkpoints"
+SPRESGAN_MODEL_BEST_MODEL_DIRECTORY: str = "/scratch/huan4397/out/spresgan/best"
+SPRESGAN_MODEL_TRAINING_CURVE_DIRECTORY: str = (
+    "/scratch/huan4397/out/spresgan/training_curves"
+)

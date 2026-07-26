@@ -439,5 +439,5 @@ if __name__ == "__main__":
         "data/synthetic_split/train",
         "data/real_images",
         segmentor_model_path="models/segmentor/best/UNetSegmentor_bs16_lr0.0001_best.model",
-        num_epochs=30,
+        num_epochs=200,
     )
