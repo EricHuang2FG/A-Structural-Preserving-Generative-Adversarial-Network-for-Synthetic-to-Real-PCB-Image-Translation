@@ -84,25 +84,35 @@ def linear_lr_schedule(
 
 
 def plot_spresgan_training_curves(
-    generator_a_loss: np.ndarray,
+    generator_loss: np.ndarray,
     discriminator_a_loss: np.ndarray,
     discriminator_b_loss: np.ndarray,
     structural_loss: np.ndarray | None,
     output_path_template: str,  # must have {{ type }} in the string
     plot: bool = False,
 ) -> None:
-    num_epochs: int = len(generator_a_loss) + 1
+    num_epochs: int = len(generator_loss) + 1
 
-    # generator, discriminator losses
+    # generator losses
     plt.figure()
-    plt.title("Generator and Discriminator Loss vs. Epochs")
-    plt.plot(range(1, num_epochs), generator_a_loss, label="Generator Loss")
+    plt.title("Generator Loss vs. Epochs")
+    plt.plot(range(1, num_epochs), generator_loss, label="Generator Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend(loc="best")
+    plt.savefig(output_path_template.replace("{{ type }}", "generator_loss"))
+    if plot:
+        plt.show()
+
+    # discriminator losses
+    plt.figure()
+    plt.title("Discriminator Loss vs. Epochs")
     plt.plot(range(1, num_epochs), discriminator_a_loss, label="Discriminator A Loss")
     plt.plot(range(1, num_epochs), discriminator_b_loss, label="Discriminator B Loss")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.legend(loc="best")
-    plt.savefig(output_path_template.replace("{{ type }}", "loss"))
+    plt.savefig(output_path_template.replace("{{ type }}", "discriminator_loss"))
     if plot:
         plt.show()
 
@@ -121,7 +131,7 @@ def plot_spresgan_training_curves(
     metrics_path: str = output_path_template.replace("{{ type }}", "metrics")
     metrics_path = metrics_path.rsplit(".", 1)[0] + ".npz"
     metrics_mapping: dict[str, np.ndarray] = {
-        "generator_a_loss": generator_a_loss,
+        "generator_loss": generator_loss,
         "discriminator_a_loss": discriminator_a_loss,
         "discriminator_b_loss": discriminator_b_loss,
         "structure_loss": structural_loss,
@@ -438,6 +448,6 @@ if __name__ == "__main__":
     train_spresgan(
         "data/synthetic_split/train",
         "data/real_images",
-        segmentor_model_path="models/segmentor/best/UNetSegmentor_bs16_lr0.0001_best.model",
+        segmentor_model_path="models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
         num_epochs=200,
     )

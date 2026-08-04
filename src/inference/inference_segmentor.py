@@ -2,10 +2,9 @@ import torch
 
 from torch.utils.data import DataLoader
 
+from src.data_processing.datasets import PCBSegmentorDataset
 from src.model.segmentor import UNetSegmentor
-from src.utils.constants import (
-    CLASS_TO_SEMANTIC_INDEX_MAPPING,
-)
+from src.utils.constants import CLASS_TO_SEMANTIC_INDEX_MAPPING, TARGET_IMAGE_SIZE
 
 
 def evaluate_segmentor(
@@ -42,8 +41,11 @@ def load_frozen_segmentor(
     model_path: str,
     device: torch.device,
     num_classes: int = len(CLASS_TO_SEMANTIC_INDEX_MAPPING),
+    base_channel_size: int = 128,
 ) -> UNetSegmentor:
-    model: UNetSegmentor = UNetSegmentor(num_classes=num_classes)
+    model: UNetSegmentor = UNetSegmentor(
+        num_classes=num_classes, base_channels=base_channel_size
+    )
     model.load_state_dict(torch.load(model_path, map_location=device))
 
     model.to(device)
@@ -88,3 +90,22 @@ def predict_binary_mask_segmentor(
         probability: torch.Tensor = torch.sigmoid(logit)
 
         return (probability > is_foreground_probability_threshold).float()
+
+
+if __name__ == "__main__":
+    test_dataset: PCBSegmentorDataset = PCBSegmentorDataset(
+        "data/synthetic_split/test", target_image_size=TARGET_IMAGE_SIZE
+    )
+    test_loader: DataLoader = DataLoader(test_dataset, batch_size=8, shuffle=False)
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model: UNetSegmentor = load_frozen_segmentor(
+        "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
+        device,
+        base_channel_size=128,
+    )
+
+    test_loss: float
+    test_error: float
+    test_loss, test_error = evaluate_segmentor(model, test_loader, device)
+    print(f"UNetSegmentor | Test loss: {test_loss}, test error: {test_error}")
