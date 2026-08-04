@@ -3,6 +3,7 @@ import time
 import json
 import shutil
 import random
+import tempfile
 import subprocess
 
 import wx
@@ -16,6 +17,10 @@ from src.utils.constants import (
     BOARD_RENDER_HEIGHT,
     BOARD_RENDER_WIDTH,
     RENDER_QUALITY,
+    DIFFERENTIAL_RENDERING_QUALITY,
+    DIFFERENTIAL_THRESHOLD,
+    DIFFERENTIAL_RENDERING_COLOUR_GROUP_MARGIN_PX,
+    MIN_BLOB_AREA,
     BOARD_SIDE_BOTTOM,
     BOARD_SIDE_TOP,
     REFERENCE_TO_CLASS_MAPPING,
@@ -169,7 +174,9 @@ def get_image_dimensions(image_path: str) -> tuple[int, int]:
     return width, height
 
 
-def render_pcb(pcb_file_path: str, output_file_path: str, side: str) -> None:
+def render_pcb(
+    pcb_file_path: str, output_file_path: str, side: str, quality: str = RENDER_QUALITY
+) -> None:
     if not os.path.exists(pcb_file_path):
         raise FileNotFoundError(f"{pcb_file_path} does not exist.")
 
@@ -190,13 +197,211 @@ def render_pcb(pcb_file_path: str, output_file_path: str, side: str) -> None:
         "--background",
         "transparent",
         "--quality",
-        RENDER_QUALITY,
+        quality,
         pcb_file_path,
     ]
     subprocess.run(command, check=True, capture_output=True)
 
 
-def get_pcb_geometry(pcb_file_path: str) -> dict:
+def render_pcb_differential_baseline(
+    pcb_file_path: str, out_path: str, side: str
+) -> None:
+    board: pcbnew.BOARD = pcbnew.LoadBoard(pcb_file_path)
+    hide_footprint_text(board)
+
+    temp: Any = tempfile.NamedTemporaryFile(suffix=".kicad_pcb", delete=False)
+    temp.close()
+
+    temp_path: str = temp.name
+    try:
+        pcbnew.SaveBoard(temp_path, board)
+        render_pcb(temp_path, out_path, side, quality=DIFFERENTIAL_RENDERING_QUALITY)
+    finally:
+        os.remove(temp_path)  # remove the temporary file that we no longer need
+
+
+def hide_footprint_text(board: pcbnew.BOARD) -> None:
+    footprint: pcbnew.FOOTPRINT
+    for footprint in board.GetFootprints():
+        footprint.Reference().SetVisible(False)
+        footprint.Value().SetVisible(False)
+
+        item: Any
+        for item in footprint.GraphicalItems():
+            if isinstance(item, pcbnew.PCB_TEXT):
+                item.SetVisible(False)
+
+
+def differential_rendering(
+    pcb_file_path: str,
+    refs_to_remove: list[str],
+    side: str,
+    out_path: str,
+) -> None:
+    board: pcbnew.BOARD = pcbnew.LoadBoard(pcb_file_path)  # reload pristine each pass
+    hide_footprint_text(board)
+
+    ref: str
+    for ref in refs_to_remove:
+        footprint: Optional[pcbnew.FOOTPRINT] = board.FindFootprintByReference(ref)
+        if footprint is not None:
+            board.RemoveNative(footprint)
+
+    temp: Any = tempfile.NamedTemporaryFile(suffix=".kicad_pcb", delete=False)
+    temp.close()
+
+    temp_path: str = temp.name
+    try:
+        pcbnew.SaveBoard(temp_path, board)
+        render_pcb(temp_path, out_path, side, quality=DIFFERENTIAL_RENDERING_QUALITY)
+    finally:
+        os.remove(temp_path)
+
+
+def poly_set_to_polygons(poly_set: Any) -> list[list[tuple[float, float]]]:
+    polygons: list[list[tuple[float, float]]] = []
+
+    outline_index: int
+    for outline_index in range(poly_set.OutlineCount()):
+        outline: Any = poly_set.Outline(outline_index)
+
+        points: list[tuple[float, float]] = []
+        i: int
+        for i in range(outline.PointCount()):
+            point: Any = outline.CPoint(i)
+            points.append((iu_to_mm(point.x), iu_to_mm(point.y)))
+
+        if len(points) >= 3:
+            polygons.append(points)
+
+    return polygons
+
+
+def load_rgb_on_black(path: str) -> np.ndarray:
+    image: Optional[np.ndarray] = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    if image is None:
+        raise FileNotFoundError(f"{path} does not exist or could not be read.")
+
+    if image.ndim == 3 and image.shape[2] == 4:
+        alpha: np.ndarray = image[:, :, 3].astype(np.float32) / 255.0
+        rgb: np.ndarray = image[:, :, :3].astype(np.float32) * alpha[..., None]
+        return rgb
+
+    return image.astype(np.float32)
+
+
+def get_differential_mask(full_rgb: np.ndarray, variant_rgb: np.ndarray) -> np.ndarray:
+    diff: np.ndarray = np.abs(full_rgb - variant_rgb).max(axis=2)  # max over channels
+    binary: np.ndarray = (diff > DIFFERENTIAL_THRESHOLD).astype(np.uint8)
+
+    kernel: np.ndarray = np.ones((3, 3), np.uint8)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)  # kill speckle
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)  # close AA gaps
+
+    return binary
+
+
+def get_footprint_image_hull(
+    fp: pcbnew.FOOTPRINT,
+    side: str,
+    transform: Callable[[float, float], tuple[float, float]],
+    edge_bbox: tuple[float, float, float, float],
+    image_size: tuple[int, int],
+) -> Optional[np.ndarray]:
+    # approximate region used for grouping & blob to footprint assignment,
+    polys: list[list[tuple[float, float]]] = poly_set_to_polygons(fp.GetBoundingHull())
+    if polys:
+        poly: list[tuple[float, float]] = max(polys, key=len)
+    else:
+        bbox: pcbnew.BOX2I = fp.GetBoundingBox(False, False)
+        x_min: float = iu_to_mm(bbox.GetLeft())
+        y_min: float = iu_to_mm(bbox.GetTop())
+        x_max: float = iu_to_mm(bbox.GetRight())
+        y_max: float = iu_to_mm(bbox.GetBottom())
+        poly = [(x_min, y_min), (x_max, y_min), (x_max, y_max), (x_min, y_max)]
+
+    width: int
+    height: int
+    width, height = image_size
+
+    pts: list[tuple[float, float]] = []
+    x: float
+    y: float
+    for x, y in poly:
+        if side == BOARD_SIDE_BOTTOM:
+            x = mirror_x(x, edge_bbox)
+        u: float
+        v: float
+        u, v = transform(x, y)
+        pts.append((u, v))
+
+    arr: np.ndarray = np.array(pts, dtype=np.int32)
+    arr[:, 0] = np.clip(arr[:, 0], 0, width - 1)
+    arr[:, 1] = np.clip(arr[:, 1], 0, height - 1)
+
+    return arr
+
+
+def is_bbox_overlap(
+    a: tuple[int, int, int, int],
+    b: tuple[int, int, int, int],
+    margin: int,
+) -> bool:
+    a_x: int
+    a_y: int
+    a_w: int
+    a_h: int
+    a_x, a_y, a_w, a_h = a
+
+    b_x: int
+    b_y: int
+    b_w: int
+    b_h: int
+    b_x, b_y, b_w, b_h = b
+
+    return not (
+        a_x - margin > b_x + b_w
+        or b_x - margin > a_x + a_w
+        or a_y - margin > b_y + b_h
+        or b_y - margin > a_y + a_h
+    )
+
+
+def get_colour_groups(
+    regions_bbox: dict[str, tuple[int, int, int, int]],
+    margin: int,
+) -> list[list[str]]:
+    refs: list[str] = list(regions_bbox)
+    adj: dict[str, set[str]] = {r: set() for r in refs}
+
+    i: int
+    a: str
+    b: str
+    for i, a in enumerate(refs):
+        for b in refs[i + 1 :]:
+            if is_bbox_overlap(regions_bbox[a], regions_bbox[b], margin):
+                adj[a].add(b)
+                adj[b].add(a)
+
+    color: dict[str, int] = {}
+    r: str
+    for r in sorted(
+        refs, key=lambda r: len(adj[r]), reverse=True
+    ):  # highest degree first
+        used: set[int] = {color[n] for n in adj[r] if n in color}
+        c: int = 0
+        while c in used:
+            c += 1
+        color[r] = c
+
+    groups: dict[int, list[str]] = {}
+    for r, c in color.items():
+        groups.setdefault(c, []).append(r)
+
+    return list(groups.values())
+
+
+def get_pcb_rectangular_geometry(pcb_file_path: str) -> dict:
     board: pcbnew.BOARD = pcbnew.LoadBoard(pcb_file_path)
 
     edge_bbox: pcbnew.BOX2I = board.GetBoardEdgesBoundingBox()
@@ -318,6 +523,146 @@ def get_pcb_to_image_coordinate_transformation(
 
 
 def get_annotation_instance_mask(
+    pcb_file_path: str,
+    side: str,
+    work_dir: str,
+) -> tuple[np.ndarray, list[dict]]:
+    board: pcbnew.BOARD = pcbnew.LoadBoard(pcb_file_path)
+
+    e: pcbnew.BOX2I = board.GetBoardEdgesBoundingBox()
+    edge_bbox: tuple[float, float, float, float] = (
+        iu_to_mm(e.GetLeft()),
+        iu_to_mm(e.GetTop()),
+        iu_to_mm(e.GetRight()),
+        iu_to_mm(e.GetBottom()),
+    )
+
+    footprint: pcbnew.FOOTPRINT
+    side_footprints: list[pcbnew.FOOTPRINT] = [
+        footprint
+        for footprint in board.GetFootprints()
+        if (BOARD_SIDE_BOTTOM if footprint.IsFlipped() else BOARD_SIDE_TOP) == side
+    ]
+
+    # get the transform, size, and baseline pixels of a flat render
+    full_path: str = os.path.join(work_dir, f"{side}_full.png")
+    render_pcb_differential_baseline(pcb_file_path, full_path, side)
+
+    transform: Callable[[float, float], tuple[float, float]]
+    transform = get_pcb_to_image_coordinate_transformation(full_path, edge_bbox)
+
+    width: int
+    height: int
+    width, height = get_image_dimensions(full_path)
+
+    full_rgb: np.ndarray = load_rgb_on_black(full_path)
+
+    # per-footprint image-space hull raster and ids
+    region_raster: dict[str, np.ndarray] = {}
+    regions_bbox: dict[str, tuple[int, int, int, int]] = {}
+    id_of: dict[str, int] = {}
+    meta: dict[int, tuple[str, str]] = {}
+    next_id: int = 0
+
+    for footprint in side_footprints:
+        ref: str = footprint.GetReference()
+        poly: Optional[np.ndarray] = get_footprint_image_hull(
+            footprint, side, transform, edge_bbox, (width, height)
+        )
+        if poly is None:
+            continue
+
+        next_id += 1
+        id_of[ref] = next_id
+        meta[next_id] = (ref, get_class_name_from_reference(ref))
+
+        raster: np.ndarray = np.zeros((height, width), np.uint8)
+        cv2.fillPoly(raster, [poly], 1)
+        region_raster[ref] = raster.astype(bool)
+        regions_bbox[ref] = tuple(cv2.boundingRect(poly))
+
+    instance_mask: np.ndarray = np.zeros((height, width), dtype=np.uint16)
+
+    # one render & difference per color group. Blobs are assigned by max hull overlap
+    group: list[str]
+    for group in get_colour_groups(
+        regions_bbox, DIFFERENTIAL_RENDERING_COLOUR_GROUP_MARGIN_PX
+    ):
+        variant_path: str = os.path.join(work_dir, f"{side}_variant.png")
+        differential_rendering(pcb_file_path, group, side, variant_path)
+
+        binary: np.ndarray = get_differential_mask(
+            full_rgb, load_rgb_on_black(variant_path)
+        )
+
+        n: int
+        labels: np.ndarray
+        stats: np.ndarray
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(binary, 8)
+
+        lbl: int
+        for lbl in range(1, n):
+            if stats[lbl, cv2.CC_STAT_AREA] < MIN_BLOB_AREA:
+                continue
+
+            blob: np.ndarray = labels == lbl
+            best_ref: Optional[str] = None
+            best_overlap: int = 0
+
+            for ref in group:
+                ov: int = int(np.count_nonzero(blob & region_raster[ref]))
+                if ov > best_overlap:
+                    best_overlap, best_ref = ov, ref
+
+            if (
+                best_ref is not None
+            ):  # blobs matching no hull = stray silkscreen -> dropped
+                instance_mask[blob] = id_of[best_ref]
+
+    # fallback: if footprint is too low-contrast to differentiate, fill its hull
+    instance_id: int
+    for ref, instance_id in id_of.items():
+        if not np.any(instance_mask == instance_id):
+            instance_mask[region_raster[ref]] = instance_id
+
+    # polygon annotations from the mask
+    annotations: list[dict] = []
+    cls: str
+    for instance_id, (ref, cls) in meta.items():
+        blob_u8: np.ndarray = (instance_mask == instance_id).astype(np.uint8)
+        if not blob_u8.any():
+            continue
+
+        contours: list[np.ndarray]
+        contours, _ = cv2.findContours(
+            blob_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        contours = [c for c in contours if len(c) >= 3]
+        if not contours:
+            continue
+
+        x: int
+        y: int
+        w: int
+        h: int
+        x, y, w, h = cv2.boundingRect(np.vstack(contours))
+
+        annotations.append(
+            {
+                "id": instance_id,
+                "reference_designator": ref,
+                "class_name": cls,
+                "bbox": [int(x), int(y), int(w), int(h)],
+                "segmentation": [
+                    c.reshape(-1).astype(float).tolist() for c in contours
+                ],
+            }
+        )
+
+    return instance_mask, annotations
+
+
+def get_rectangular_annotation_instance_mask(
     footprints: list[dict],
     side: str,
     pcb_to_image_coordinate_transformation: Callable,
@@ -432,32 +777,31 @@ def create_semantic_mask(
     cv2.imwrite(output_path, semantic_mask)
 
 
-def process_pcb(pcb_file_path: str, output_directory: str) -> None:
+def process_pcb(
+    pcb_file_path: str, output_directory: str, process_both_sides: bool = True
+) -> None:
     if not os.path.exists(pcb_file_path):
         raise FileNotFoundError(f"{pcb_file_path} does not exist.")
     os.makedirs(os.path.dirname(output_directory), exist_ok=True)
 
-    geometry: dict = get_pcb_geometry(pcb_file_path)
-
+    all_sides: list[str] = (
+        [BOARD_SIDE_TOP, BOARD_SIDE_BOTTOM] if process_both_sides else [BOARD_SIDE_TOP]
+    )
     side: str
-    for side in (BOARD_SIDE_TOP, BOARD_SIDE_BOTTOM):
+    for side in all_sides:
         image_path: str = f"{output_directory}/{side}_image.png"
         render_pcb(pcb_file_path, image_path, side)
         print(f"Image for {side} rendered")
 
-        edge_bbox: tuple[float, float, float, float] = geometry["edge_bbox"]
-        pcb_to_image_coordinate_transformation: Callable = (
-            get_pcb_to_image_coordinate_transformation(image_path, edge_bbox)
-        )
         segmentation_mask: np.ndarray
         annotations: list[dict]
-        segmentation_mask, annotations = get_annotation_instance_mask(
-            geometry["footprints"],
-            side,
-            pcb_to_image_coordinate_transformation,
-            edge_bbox,
-            image_size=get_image_dimensions(image_path),
-        )
+        work_dir_ctx: tempfile.TemporaryDirectory = tempfile.TemporaryDirectory()
+        work_dir: str
+        with work_dir_ctx as work_dir:
+            segmentation_mask, annotations = get_annotation_instance_mask(
+                pcb_file_path, side, work_dir
+            )
+
         segmentation_mask_path: str = f"{output_directory}/{side}_mask.png"
         cv2.imwrite(segmentation_mask_path, segmentation_mask)
 
@@ -477,7 +821,11 @@ def process_pcb(pcb_file_path: str, output_directory: str) -> None:
 
 
 def process_multiple_pcbs(
-    pcb_file_directory: str, output_directory: str, start_num: int, end_num: int
+    pcb_file_directory: str,
+    output_directory: str,
+    start_num: int,
+    end_num: int,
+    process_both_sides: bool = True,
 ) -> None:
     # start_num and end_num are inclusive, and are NOT zero-indexed
     if not os.path.isdir(pcb_file_directory):
@@ -515,7 +863,11 @@ def process_multiple_pcbs(
         )
 
         try:
-            process_pcb(pcb_file_path, curr_pcb_output_directory)
+            process_pcb(
+                pcb_file_path,
+                curr_pcb_output_directory,
+                process_both_sides=process_both_sides,
+            )
         except Exception as e:
             print(f"PCB {curr_pcb_file_count} failed to process due to error {e}")
             falied_processes.append((pcb_file_path, str(e)))
@@ -542,6 +894,11 @@ def split_dataset(
     test_ratio: float = 0.1,
     seed: int = SEED,
 ) -> None:
+    if os.path.isdir(train_directory):
+        shutil.rmtree(train_directory)
+    if os.path.isdir(test_directory):
+        shutil.rmtree(test_directory)
+
     os.makedirs(train_directory, exist_ok=True)
     os.makedirs(test_directory, exist_ok=True)
 
@@ -580,7 +937,9 @@ def split_dataset(
 if __name__ == "__main__":
     wx.Log.SetLogLevel(wx.LOG_Error)
     app: wx.App = wx.App(False)
-    process_multiple_pcbs("data/open-schematics", "data/synthetic", 1, 1800)
+    process_multiple_pcbs(
+        "data/open-schematics", "data/synthetic", 1, 2500, process_both_sides=False
+    )
     split_dataset(
         "data/synthetic", "data/synthetic_split/train", "data/synthetic_split/test"
     )
