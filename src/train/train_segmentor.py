@@ -33,14 +33,16 @@ def train_segmentor(
     early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
     target_image_size: int = TARGET_IMAGE_SIZE,
     checkpoint_path: str | None = None,
-) -> None:
+    training_curve_output_directory: str = SEGMENTOR_MODEL_TRAINING_CURVE_DIRECTORY,
+    plot: bool = False,
+) -> float:
     torch.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED)
     np.random.seed(SEED)
 
     os.makedirs(SEGMENTOR_MODEL_BEST_MODEL_DIRECTORY, exist_ok=True)
     os.makedirs(SEGMENTOR_MODEL_CHECKPOINTS_DIRECTORY, exist_ok=True)
-    os.makedirs(SEGMENTOR_MODEL_TRAINING_CURVE_DIRECTORY, exist_ok=True)
+    os.makedirs(training_curve_output_directory, exist_ok=True)
 
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -170,7 +172,10 @@ def train_segmentor(
             )
         else:
             epochs_without_improvement += 1
-            if epochs_without_improvement >= early_stopping_patience:
+            if (
+                early_stopping_patience > 0
+                and epochs_without_improvement >= early_stopping_patience
+            ):
                 print(f"Early stopping on epoch {epoch + 1}")
                 break
 
@@ -204,7 +209,7 @@ def train_segmentor(
         validation_error[:total_epochs_ran],
         validation_loss[:total_epochs_ran],
         os.path.join(
-            SEGMENTOR_MODEL_TRAINING_CURVE_DIRECTORY,
+            training_curve_output_directory,
             TRAINING_CURVE_FILE_NAME_TEMPLATE.replace(
                 "{{ model_name }}",
                 f"{model.name}",
@@ -212,7 +217,10 @@ def train_segmentor(
             .replace("{{ batch_size }}", str(batch_size))
             .replace("{{ learning_rate }}", str(learning_rate)),
         ),
+        plot=plot,
     )
+
+    return best_validation_loss
 
 
 def plot_segmentor_training_validation_curves(

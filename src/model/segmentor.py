@@ -56,7 +56,7 @@ class UNetSegmentor(nn.Module):
         base_channels: int = 64,
     ) -> None:
         super().__init__()
-        self.name: str = "UNetSegmentor"
+        self.name: str = f"UNetSegmentor_BaseChannels{base_channels}"
         self.downsample_layer_1: DownsampleBlock = DownsampleBlock(
             in_channels, base_channels
         )

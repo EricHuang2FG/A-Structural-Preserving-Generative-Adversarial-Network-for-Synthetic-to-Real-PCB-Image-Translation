@@ -23,11 +23,13 @@ data/cyclegan_data/*
 models/segmentor/best/*
 models/segmentor/checkpoints/*
 models/segmentor/training_curves/*
+models/segmentor/sweep_curves/*
 models/cyclegan/checkpoints/*
 
 !models/segmentor/best/.gitkeep
 !models/segmentor/checkpoints/.gitkeep
 !models/segmentor/training_curves/.gitkeep
+!models/segmentor/sweep_curves/.gitkeep
 !models/cyclegan/checkpoints/.gitkeep
 
 outputs/cyclegan/images/*
