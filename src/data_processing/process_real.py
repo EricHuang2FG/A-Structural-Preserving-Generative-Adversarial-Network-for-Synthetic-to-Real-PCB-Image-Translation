@@ -11,165 +11,178 @@ from src.utils.constants import BOARD_RENDER_WIDTH, BOARD_RENDER_HEIGHT
 
 def remove_background_rotate_axis_aligned(
     image: np.ndarray,
-    border_fraction: float = 0.04,
-    center_fraction: float = 0.5,
-    working_max_dimension: int = 510,
-    grabcut_iterations: int = 8,
-    crop_padding_px: int = 6,
+    threshold: int = 25,
+    crop_padding_px: int = 10,
 ) -> np.ndarray:
     height: int
     width: int
     height, width = image.shape[:2]
 
-    scale: float = min(1.0, working_max_dimension / max(height, width))
-    small_image: np.ndarray = (
-        cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-        if scale < 1.0
-        else image
-    )
-    small_height: int
-    small_width: int
-    small_height, small_width = small_image.shape[:2]
+    # segment foreground from black background
+    gray: np.ndarray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    mask: np.ndarray = np.full(
-        (small_height, small_width), cv2.GC_PR_FGD, dtype=np.uint8
+    foreground_mask: np.ndarray
+    _, foreground_mask = cv2.threshold(
+        gray,
+        threshold,
+        255,
+        cv2.THRESH_BINARY,
     )
 
-    border_h: int = max(1, int(small_height * border_fraction))
-    border_w: int = max(1, int(small_width * border_fraction))
-    mask[0:border_h, :] = cv2.GC_PR_BGD
-    mask[small_height - border_h :, :] = cv2.GC_PR_BGD
-    mask[:, 0:border_w] = cv2.GC_PR_BGD
-    mask[:, small_width - border_w :] = cv2.GC_PR_BGD
+    # cleanup
+    kernel: np.ndarray = np.ones((5, 5), np.uint8)
 
-    center_h: int = int(small_height * center_fraction)
-    center_w: int = int(small_width * center_fraction)
-    y0: int = (small_height - center_h) // 2
-    x0: int = (small_width - center_w) // 2
-    mask[y0 : y0 + center_h, x0 : x0 + center_w] = cv2.GC_FGD
-
-    bgd_model: np.ndarray = np.zeros((1, 65), dtype=np.float64)
-    fgd_model: np.ndarray = np.zeros((1, 65), dtype=np.float64)
-
-    for _ in range(2):  # Run twice for better convergence
-        cv2.grabCut(
-            small_image,
-            mask,
-            None,
-            bgd_model,
-            fgd_model,
-            grabcut_iterations,
-            cv2.GC_INIT_WITH_MASK,
-        )
-
-    foreground_mask_small: np.ndarray = np.where(
-        (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0
-    ).astype(np.uint8)
-
-    # Use larger kernels for cleaner mask
-    close_kernel: np.ndarray = np.ones((15, 15), np.uint8)
-    open_kernel: np.ndarray = np.ones((7, 7), np.uint8)  # Slightly larger
-    foreground_mask_small = cv2.morphologyEx(
-        foreground_mask_small, cv2.MORPH_CLOSE, close_kernel
-    )
-    foreground_mask_small = cv2.morphologyEx(
-        foreground_mask_small, cv2.MORPH_OPEN, open_kernel
+    foreground_mask = cv2.morphologyEx(
+        foreground_mask,
+        cv2.MORPH_OPEN,
+        kernel,
     )
 
-    foreground_mask: np.ndarray = cv2.resize(
-        foreground_mask_small, (width, height), interpolation=cv2.INTER_LINEAR
+    foreground_mask = cv2.morphologyEx(
+        foreground_mask,
+        cv2.MORPH_CLOSE,
+        kernel,
     )
-    
-    foreground_mask = cv2.GaussianBlur(foreground_mask, (9, 9), 0)
-    _, foreground_mask = cv2.threshold(foreground_mask, 127, 255, cv2.THRESH_BINARY)
-    
-    # Additional cleanup at full resolution
-    clean_kernel = np.ones((3, 3), np.uint8)
-    foreground_mask = cv2.morphologyEx(foreground_mask, cv2.MORPH_CLOSE, clean_kernel)
+
+    # keep largest connected component (the PCB)
+    num_labels: int
+    labels: np.ndarray
+    stats: np.ndarray
+
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        foreground_mask, connectivity=8
+    )
+
+    if num_labels <= 1:
+        return image
+
+    largest: int = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+
+    foreground_mask = np.zeros_like(
+        foreground_mask,
+    )
+
+    foreground_mask[labels == largest] = 255
 
     contours: list[np.ndarray]
+
     contours, _ = cv2.findContours(
-        foreground_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        foreground_mask,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE,
     )
+
     if not contours:
         return image
 
-    area_threshold: float = 0.02 * (width * height)
-    significant_points: list[np.ndarray] = [
-        c for c in contours if cv2.contourArea(c) > area_threshold
-    ]
-    if not significant_points:
-        significant_points = [max(contours, key=cv2.contourArea)]
-    all_points: np.ndarray = np.vstack(significant_points)
-    hull: np.ndarray = cv2.convexHull(all_points)
-
-    min_area_rect: tuple = cv2.minAreaRect(hull)
-
-    (_, _), (_, _), angle = min_area_rect
-
-    # Normalize angle to ensure the smallest rotation to axis alignment
-    angle = angle % 90.0
-    if angle > 45.0:
-        angle -= 90.0
-    elif angle < -45.0:
-        angle += 90.0
-
-    img_center_x = width / 2.0
-    img_center_y = height / 2.0
-    
-    rotation_matrix: np.ndarray = cv2.getRotationMatrix2D(
-        (img_center_x, img_center_y), angle, 1.0
+    cv2.drawContours(
+        foreground_mask,
+        contours,
+        -1,
+        255,
+        thickness=cv2.FILLED,
     )
+
+    # compute rotation
+    largest_contour: np.ndarray = max(contours, key=cv2.contourArea)
+
+    hull: np.ndarray = cv2.convexHull(largest_contour)
+
+    rect: tuple[
+        tuple[float, float],
+        tuple[float, float],
+        float,
+    ] = cv2.minAreaRect(hull)
+
+    angle: float = rect[2]
+
+    angle = angle % 90.0
+
+    if angle > 45:
+        angle -= 90
+
+    # rotate the image and the mask separately
+    rotation_matrix: np.ndarray = cv2.getRotationMatrix2D(
+        (width / 2, height / 2),
+        angle,
+        1.0,
+    )
+
     rotated_image: np.ndarray = cv2.warpAffine(
         image,
         rotation_matrix,
         (width, height),
-        flags=cv2.INTER_CUBIC,
-        borderMode=cv2.BORDER_CONSTANT,  # Changed from BORDER_REPLICATE
-        borderValue=(255, 255, 255),  # White border for cleaner edge
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(255, 255, 255),
     )
+
     rotated_mask: np.ndarray = cv2.warpAffine(
         foreground_mask,
         rotation_matrix,
         (width, height),
         flags=cv2.INTER_NEAREST,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=0,
     )
 
-    rotated_contours: list[np.ndarray]
-    rotated_contours, _ = cv2.findContours(
-        rotated_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    # crop
+    contours, _ = cv2.findContours(
+        rotated_mask,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE,
     )
-    if not rotated_contours:
+
+    if not contours:
         return image
 
-    rotated_significant: list[np.ndarray] = [
-        c for c in rotated_contours if cv2.contourArea(c) > area_threshold
-    ]
-    if not rotated_significant:
-        rotated_significant = [max(rotated_contours, key=cv2.contourArea)]
-    rotated_hull_points: np.ndarray = np.vstack(rotated_significant)
+    largest: np.ndarray = max(
+        contours,
+        key=cv2.contourArea,
+    )
 
     x: int
     y: int
     w: int
     h: int
-    x, y, w, h = cv2.boundingRect(rotated_hull_points)
-
-    crop_padding_px = max(crop_padding_px, 10)  # Ensure minimum padding
+    x, y, w, h = cv2.boundingRect(
+        largest,
+    )
     x = max(0, x - crop_padding_px)
     y = max(0, y - crop_padding_px)
     w = min(width - x, w + 2 * crop_padding_px)
     h = min(height - y, h + 2 * crop_padding_px)
 
     cropped_image: np.ndarray = rotated_image[y : y + h, x : x + w]
+
     cropped_mask: np.ndarray = rotated_mask[y : y + h, x : x + w]
 
-    edge_soft_mask = cv2.GaussianBlur(cropped_mask.astype(np.float32), (5, 5), 0) / 255.0
-    
-    result: np.ndarray = cropped_image.copy()
-    for c in range(3):  # Apply to each channel
-        result[:, :, c] = (cropped_image[:, :, c] * edge_soft_mask + 
-                          255 * (1 - edge_soft_mask)).astype(np.uint8)
+    # attempt to remove dark edges
+    gray_crop: np.ndarray = cv2.cvtColor(
+        cropped_image,
+        cv2.COLOR_BGR2GRAY,
+    )
+
+    distance: np.ndarray = cv2.distanceTransform(
+        cropped_mask,
+        cv2.DIST_L2,
+        3,
+    )
+
+    # pixels close to the PCB boundary
+    edge_region: np.ndarray = distance < 15
+
+    # dark pixels near boundary are likely black background bleed
+    dark_edge: np.ndarray = (gray_crop < 45) & edge_region
+
+    final_mask: np.ndarray = cropped_mask.copy()
+
+    final_mask[dark_edge] = 0
+
+    # cast the image onto white background
+    result: np.ndarray = np.full_like(cropped_image, 255)
+
+    result[final_mask > 0] = cropped_image[final_mask > 0]
 
     return result
 
@@ -177,11 +190,8 @@ def remove_background_rotate_axis_aligned(
 def process_real_images(
     source_directory: str,
     destination_directory: str,
-    border_fraction: float = 0.04,
-    center_fraction: float = 0.5,
-    working_max_dimension: int = 900,
-    grabcut_iterations: int = 8,
-    crop_padding_px: int = 6,
+    threshold: int = 25,
+    crop_padding_px: int = 10,
 ) -> None:
     os.makedirs(destination_directory, exist_ok=True)
 
@@ -204,10 +214,7 @@ def process_real_images(
 
                 image = remove_background_rotate_axis_aligned(
                     image,
-                    border_fraction=border_fraction,
-                    center_fraction=center_fraction,
-                    working_max_dimension=working_max_dimension,
-                    grabcut_iterations=grabcut_iterations,
+                    threshold=threshold,
                     crop_padding_px=crop_padding_px,
                 )
 
