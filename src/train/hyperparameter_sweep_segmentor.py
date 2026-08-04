@@ -68,7 +68,7 @@ def sweep_batch_size(
 def sweep_base_channel_size(
     candidate_base_channel_sizes: list[int],
     learning_rate: float = 1e-3,
-    batch_size: int = 16,
+    batch_size: int = 8,
 ) -> None:
     best_validation_loss: float = float("inf")
     best_base_channel_size_by_validation_loss: int = candidate_base_channel_sizes[0]
@@ -100,4 +100,4 @@ def sweep_base_channel_size(
 
 
 if __name__ == "__main__":
-    sweep_batch_size([8, 16, 32, 64], learning_rate=1e-3, base_channel_size=64)
+    sweep_base_channel_size([32, 64, 128], learning_rate=1e-3, batch_size=8)
