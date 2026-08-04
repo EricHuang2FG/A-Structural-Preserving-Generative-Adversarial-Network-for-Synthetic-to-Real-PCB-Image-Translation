@@ -178,7 +178,8 @@ def train_spresgan(
         paired, batch_size=batch_size, shuffle=True, num_workers=4, drop_last=True
     )
     print(
-        f"{len(synthetic_dataset)} synthetic, {len(real_dataset)} real -> {len(paired)} pairs/epoch"
+        f"{len(synthetic_dataset)} synthetic, {len(real_dataset)} real -> {len(paired)} pairs/epoch",
+        flush=True,
     )
 
     # define generators, discriminators and load the frozen segmentor
@@ -259,7 +260,10 @@ def train_spresgan(
                 "structure_losses"
             ]
 
-        print(f"Resumed from epoch {total_epochs_ran} ({resume_checkpoint_path})")
+        print(
+            f"Resumed from epoch {total_epochs_ran} ({resume_checkpoint_path})",
+            flush=True,
+        )
 
     model_name_no_epoch: str = (
         MODEL_NAME_TEMPLATE.replace(
@@ -383,7 +387,8 @@ def train_spresgan(
                 f"d_a_loss={d_a_losses[epoch]:.4f} d_b_loss={d_b_losses[epoch]:.4f} "
                 f"loss_structure={structure_losses[epoch]:.4f} "
                 f"Epoch training time={(epoch_end_time - epoch_start_time):.4f} s"
-            )
+            ),
+            flush=True,
         )
 
         if (epoch + 1) % 5 == 0:
@@ -410,7 +415,7 @@ def train_spresgan(
             )
 
     end_time: float = time.perf_counter()
-    print(f"Total time elapsed: {(end_time - start_time):.4f}s")
+    print(f"Total time elapsed: {(end_time - start_time):.4f}s", flush=True)
 
     torch.save(
         g_a_to_b.state_dict(),
