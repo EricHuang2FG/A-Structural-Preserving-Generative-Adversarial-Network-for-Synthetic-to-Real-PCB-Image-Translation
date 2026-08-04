@@ -13,7 +13,7 @@ def remove_background_rotate_axis_aligned(
     image: np.ndarray,
     border_fraction: float = 0.04,
     center_fraction: float = 0.5,
-    working_max_dimension: int = 900,
+    working_max_dimension: int = 510,
     grabcut_iterations: int = 8,
     crop_padding_px: int = 6,
 ) -> np.ndarray:
@@ -51,22 +51,24 @@ def remove_background_rotate_axis_aligned(
     bgd_model: np.ndarray = np.zeros((1, 65), dtype=np.float64)
     fgd_model: np.ndarray = np.zeros((1, 65), dtype=np.float64)
 
-    cv2.grabCut(
-        small_image,
-        mask,
-        None,
-        bgd_model,
-        fgd_model,
-        grabcut_iterations,
-        cv2.GC_INIT_WITH_MASK,
-    )
+    for _ in range(2):  # Run twice for better convergence
+        cv2.grabCut(
+            small_image,
+            mask,
+            None,
+            bgd_model,
+            fgd_model,
+            grabcut_iterations,
+            cv2.GC_INIT_WITH_MASK,
+        )
 
     foreground_mask_small: np.ndarray = np.where(
         (mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0
     ).astype(np.uint8)
 
+    # Use larger kernels for cleaner mask
     close_kernel: np.ndarray = np.ones((15, 15), np.uint8)
-    open_kernel: np.ndarray = np.ones((5, 5), np.uint8)
+    open_kernel: np.ndarray = np.ones((7, 7), np.uint8)  # Slightly larger
     foreground_mask_small = cv2.morphologyEx(
         foreground_mask_small, cv2.MORPH_CLOSE, close_kernel
     )
@@ -77,8 +79,13 @@ def remove_background_rotate_axis_aligned(
     foreground_mask: np.ndarray = cv2.resize(
         foreground_mask_small, (width, height), interpolation=cv2.INTER_LINEAR
     )
+    
     foreground_mask = cv2.GaussianBlur(foreground_mask, (9, 9), 0)
     _, foreground_mask = cv2.threshold(foreground_mask, 127, 255, cv2.THRESH_BINARY)
+    
+    # Additional cleanup at full resolution
+    clean_kernel = np.ones((3, 3), np.uint8)
+    foreground_mask = cv2.morphologyEx(foreground_mask, cv2.MORPH_CLOSE, clean_kernel)
 
     contours: list[np.ndarray]
     contours, _ = cv2.findContours(
@@ -98,24 +105,28 @@ def remove_background_rotate_axis_aligned(
 
     min_area_rect: tuple = cv2.minAreaRect(hull)
 
-    center_x: Any
-    center_y: Any
-    (center_x, center_y), (_, _), angle = min_area_rect
+    (_, _), (_, _), angle = min_area_rect
 
-    # normalize to the minimal correction angle
+    # Normalize angle to ensure the smallest rotation to axis alignment
     angle = angle % 90.0
     if angle > 45.0:
         angle -= 90.0
+    elif angle < -45.0:
+        angle += 90.0
 
+    img_center_x = width / 2.0
+    img_center_y = height / 2.0
+    
     rotation_matrix: np.ndarray = cv2.getRotationMatrix2D(
-        (center_x, center_y), angle, 1.0
+        (img_center_x, img_center_y), angle, 1.0
     )
     rotated_image: np.ndarray = cv2.warpAffine(
         image,
         rotation_matrix,
         (width, height),
         flags=cv2.INTER_CUBIC,
-        borderMode=cv2.BORDER_REPLICATE,
+        borderMode=cv2.BORDER_CONSTANT,  # Changed from BORDER_REPLICATE
+        borderValue=(255, 255, 255),  # White border for cleaner edge
     )
     rotated_mask: np.ndarray = cv2.warpAffine(
         foreground_mask,
@@ -144,8 +155,7 @@ def remove_background_rotate_axis_aligned(
     h: int
     x, y, w, h = cv2.boundingRect(rotated_hull_points)
 
-    # small padding margin, since the mask blur/threshold can shave a
-    # few pixels off the true board edge
+    crop_padding_px = max(crop_padding_px, 10)  # Ensure minimum padding
     x = max(0, x - crop_padding_px)
     y = max(0, y - crop_padding_px)
     w = min(width - x, w + 2 * crop_padding_px)
@@ -154,8 +164,12 @@ def remove_background_rotate_axis_aligned(
     cropped_image: np.ndarray = rotated_image[y : y + h, x : x + w]
     cropped_mask: np.ndarray = rotated_mask[y : y + h, x : x + w]
 
+    edge_soft_mask = cv2.GaussianBlur(cropped_mask.astype(np.float32), (5, 5), 0) / 255.0
+    
     result: np.ndarray = cropped_image.copy()
-    result[cropped_mask == 0] = (255, 255, 255)
+    for c in range(3):  # Apply to each channel
+        result[:, :, c] = (cropped_image[:, :, c] * edge_soft_mask + 
+                          255 * (1 - edge_soft_mask)).astype(np.uint8)
 
     return result
 
@@ -234,6 +248,8 @@ def process_real_images(
                 )
 
                 cv2.imwrite(destination, canvas)
+
+                print(f"Real PCB image {counter} finished processing")
 
                 counter += 1
 

@@ -27,9 +27,9 @@ def train_segmentor(
     data_root_directory: str,
     num_classes: int = len(CLASS_TO_SEMANTIC_INDEX_MAPPING),
     validation_split_fraction: float = 0.1,
-    batch_size: int = 16,
-    learning_rate: float = 1e-4,
-    num_epochs: int = 30,
+    batch_size: int = 8,
+    learning_rate: float = 1e-3,
+    num_epochs: int = 100,
     early_stopping_patience: int = EARLY_STOPPING_PATIENCE,
     target_image_size: int = TARGET_IMAGE_SIZE,
     checkpoint_path: str | None = None,
@@ -271,8 +271,9 @@ def plot_segmentor_training_validation_curves(
 
 if __name__ == "__main__":
     train_segmentor(
-        UNetSegmentor(),
+        UNetSegmentor(base_channels=128),
         "data/synthetic_split/train",
-        num_epochs=35,
-        checkpoint_path="models/segmentor/checkpoints/UNetSegmentor_bs16_lr0.0001_epoch29.model",
+        learning_rate=1e-3,
+        batch_size=8,
+        num_epochs=100,
     )
