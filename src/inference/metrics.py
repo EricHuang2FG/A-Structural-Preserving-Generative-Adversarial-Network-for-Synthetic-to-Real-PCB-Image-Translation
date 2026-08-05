@@ -14,6 +14,7 @@ from src.utils.utils import (
 )
 from src.data_processing.utils import (
     get_semantic_mask_translated_image_paths_pair,
+    get_semantic_mask_paths_with_synthetic_data,
     get_real_image_paths,
 )
 from src.model.segmentor import UNetSegmentor
@@ -87,6 +88,13 @@ def compute_overall_iou_fid_from_images(
 
 
 if __name__ == "__main__":
+    # compute metrics for raw synthetic images
+    compute_overall_iou_fid_from_images(
+        get_semantic_mask_paths_with_synthetic_data("data/synthetic_split/test"),
+        get_real_image_paths("data/real_images_split/test"),
+        "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
+    )
+
     # compute metrics for CycleGAN
     compute_overall_iou_fid_from_images(
         get_semantic_mask_translated_image_paths_pair(

@@ -97,6 +97,16 @@ def get_synthetic_data_paths_with_semantic_mask(
     return data_paths
 
 
+def get_semantic_mask_paths_with_synthetic_data(
+    root_directory: str,
+) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = get_synthetic_data_paths_with_semantic_mask(
+        root_directory
+    )
+    pairs = [(mask_path, image_path) for image_path, mask_path in pairs]
+    return pairs
+
+
 if __name__ == "__main__":
     get_semantic_mask_translated_image_paths_pair(
         "data/synthetic_split/test", "outputs/cyclegan/images"
