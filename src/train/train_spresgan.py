@@ -157,7 +157,7 @@ def plot_spresgan_training_curves(
     if plot:
         plt.show()
 
-    # validation IoU
+    # validation IoU and FID. Only plotted if validation was actually computed
     if validation_epochs:
         plt.figure()
         plt.title("Validation Segmentor IoU vs. Epochs")
@@ -169,7 +169,6 @@ def plot_spresgan_training_curves(
         if plot:
             plt.show()
 
-        # validation FID
         plt.figure()
         plt.title("Validation FID vs. Epochs")
         plt.plot(validation_epochs, validation_fid, label="Validation FID", marker="o")
@@ -198,8 +197,8 @@ def plot_spresgan_training_curves(
 def train_spresgan(
     synthetic_data_root_directory: str,
     real_data_root_directory: str,
-    synthetic_validation_data_root_directory: str,
-    real_validation_data_root_directory: str,
+    synthetic_validation_data_root_directory: str | None = None,
+    real_validation_data_root_directory: str | None = None,
     segmentor_model_path: str = "models/segmentor/best/best.model",
     target_image_size: int = TARGET_IMAGE_SIZE,
     num_classes: int = len(CLASS_TO_SEMANTIC_INDEX_MAPPING),
@@ -211,8 +210,19 @@ def train_spresgan(
     lambda_structure_start: float = 5.0,
     lambda_structure_end: float = 1.0,
     validation_frequency: int = 10,
+    compute_validation_metrics: bool = True,
     resume_checkpoint_path: str | None = None,
 ) -> None:
+    if compute_validation_metrics and (
+        synthetic_validation_data_root_directory is None
+        or real_validation_data_root_directory is None
+    ):
+        raise ValueError(
+            "compute_validation_metrics=True requires both "
+            "synthetic_validation_data_root_directory and "
+            "real_validation_data_root_directory to be provided."
+        )
+
     torch.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED)
     random.seed(SEED)
@@ -242,26 +252,33 @@ def train_spresgan(
         flush=True,
     )
 
-    # load validation data
-    synthetic_validation_dataset: PCBSPresGANSyntheticDataset = (
-        PCBSPresGANSyntheticDataset(
-            synthetic_validation_data_root_directory, target_image_size
+    # load validation data and metrics, if enabled
+    synthetic_validation_loader: DataLoader | None = None
+    real_validation_loader: DataLoader | None = None
+    fid_metric: FrechetInceptionDistance | None = None
+
+    if compute_validation_metrics:
+        synthetic_validation_dataset: PCBSPresGANSyntheticDataset = (
+            PCBSPresGANSyntheticDataset(
+                synthetic_validation_data_root_directory, target_image_size
+            )
         )
-    )
-    synthetic_validation_loader: DataLoader = DataLoader(
-        synthetic_validation_dataset, batch_size=batch_size, shuffle=False
-    )
-    real_validation_dataset: PCBSPresGANRealDataset = PCBSPresGANRealDataset(
-        real_validation_data_root_directory, target_image_size
-    )
-    real_validation_loader: DataLoader = DataLoader(
-        real_validation_dataset, batch_size=batch_size, shuffle=False
-    )
-    print(
-        f"{len(synthetic_validation_dataset)} synthetic validation, "
-        f"{len(real_validation_dataset)} real validation",
-        flush=True,
-    )
+        synthetic_validation_loader = DataLoader(
+            synthetic_validation_dataset, batch_size=batch_size, shuffle=False
+        )
+        real_validation_dataset: PCBSPresGANRealDataset = PCBSPresGANRealDataset(
+            real_validation_data_root_directory, target_image_size
+        )
+        real_validation_loader = DataLoader(
+            real_validation_dataset, batch_size=batch_size, shuffle=False
+        )
+        print(
+            f"{len(synthetic_validation_dataset)} synthetic validation, "
+            f"{len(real_validation_dataset)} real validation",
+            flush=True,
+        )
+
+        fid_metric = FrechetInceptionDistance(feature=2048, normalize=False).to(device)
 
     # define generators, discriminators and load the frozen segmentor
     generator_in_channels: int = 4
@@ -319,7 +336,7 @@ def train_spresgan(
     d_b_losses: np.ndarray = np.zeros(num_epochs)
     structure_losses: np.ndarray = np.zeros(num_epochs)
 
-    # track validation metrics
+    # track validation metrics (stays empty if compute_validation_metrics is False)
     validation_epochs: list[int] = []
     validation_iou_values: list[float] = []
     validation_fid_values: list[float] = []
@@ -373,10 +390,6 @@ def train_spresgan(
         .replace("{{ batch_size }}", str(batch_size))
         .replace("{{ learning_rate }}", str(learning_rate))
     )
-
-    fid_metric: FrechetInceptionDistance = FrechetInceptionDistance(
-        feature=2048, normalize=False
-    ).to(device)
 
     start_time: float = time.perf_counter()
 
@@ -498,8 +511,7 @@ def train_spresgan(
             flush=True,
         )
 
-        # periodic validation with IoU and FID
-        if (epoch + 1) % validation_frequency == 0:
+        if compute_validation_metrics and (epoch + 1) % validation_frequency == 0:
             validation_metrics: dict[str, float] = evaluate_spresgan(
                 g_a_to_b,
                 segmentor,
@@ -567,8 +579,9 @@ def train_spresgan(
 
     end_time: float = time.perf_counter()
     print(f"Total time elapsed: {(end_time - start_time):.4f}s", flush=True)
-    print(f"Best validation IoU achieved: {best_validation_iou:.4f}", flush=True)
-    print(f"Best validation FID achieved: {best_validation_fid:.4f}", flush=True)
+    if compute_validation_metrics:
+        print(f"Best validation IoU achieved: {best_validation_iou:.4f}", flush=True)
+        print(f"Best validation FID achieved: {best_validation_fid:.4f}", flush=True)
 
     torch.save(
         g_a_to_b.state_dict(),
@@ -613,4 +626,5 @@ if __name__ == "__main__":
         "data/real_images_split/validation",
         segmentor_model_path="models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
         num_epochs=200,
+        compute_validation_metrics=False,
     )

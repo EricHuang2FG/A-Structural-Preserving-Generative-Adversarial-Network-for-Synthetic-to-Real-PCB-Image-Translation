@@ -15,9 +15,11 @@ def process_cyclegan_dataset(
     train_b_dir: str = os.path.join(output_dir, "trainB")
     test_a_dir: str = os.path.join(output_dir, "testA")
 
-    os.makedirs(train_a_dir, exist_ok=True)
-    os.makedirs(train_b_dir, exist_ok=True)
-    os.makedirs(test_a_dir, exist_ok=True)
+    directory: str
+    for directory in (train_a_dir, train_b_dir, test_a_dir):
+        if os.path.isdir(directory):
+            shutil.rmtree(directory)
+        os.makedirs(directory, exist_ok=True)
 
     # take synthetic_split/train images into trainA
     counter: int = 1
