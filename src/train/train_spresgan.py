@@ -646,7 +646,7 @@ if __name__ == "__main__":
         segmentor_model_path="models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
         num_epochs=200,
         lambda_structure_start=0.0,
-        lambda_structure_end=1.0,
+        lambda_structure_end=2.5,
         lambda_structure_warmup_start_epoch=25,
         lambda_structure_warmup_end_epoch=75,
         compute_validation_metrics=False,

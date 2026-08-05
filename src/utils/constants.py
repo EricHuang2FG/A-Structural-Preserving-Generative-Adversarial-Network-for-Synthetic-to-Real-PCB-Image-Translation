@@ -64,8 +64,8 @@ SEGMENTOR_MODEL_SWEEP_CURVE_DIRECTORY: str = (
     "/scratch/huan4397/out/segmentor/sweep_curves"
 )
 
-SPRESGAN_MODEL_CHECKPOINTS_DIRECTORY: str = "/scratch/huan4397/out/spresgan/checkpoints"
-SPRESGAN_MODEL_BEST_MODEL_DIRECTORY: str = "/scratch/huan4397/out/spresgan/best"
+SPRESGAN_MODEL_CHECKPOINTS_DIRECTORY: str = "/scratch/huan4397/out/spresgan_v1_l25/checkpoints"
+SPRESGAN_MODEL_BEST_MODEL_DIRECTORY: str = "/scratch/huan4397/out/spresgan_v1_l25/best"
 SPRESGAN_MODEL_TRAINING_CURVE_DIRECTORY: str = (
-    "/scratch/huan4397/out/spresgan/training_curves"
+    "/scratch/huan4397/out/spresgan_v1_l25/training_curves"
 )
