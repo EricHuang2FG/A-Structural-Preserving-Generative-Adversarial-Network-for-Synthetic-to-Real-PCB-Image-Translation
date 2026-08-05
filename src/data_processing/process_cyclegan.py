@@ -38,6 +38,7 @@ def process_cyclegan_dataset(
                 os.path.join(train_a_dir, f"{counter}.png"),
             )
             counter += 1
+    print(f"{counter} trainA images")
 
     # take synthetic_split/test images into testA
     counter = 1
@@ -62,6 +63,7 @@ def process_cyclegan_dataset(
                 os.path.join(test_a_dir, f"{counter}.png"),
             )
             counter += 1
+    print(f"{counter} testA images")
 
     # take real images into trainB
     counter = 1
@@ -77,6 +79,7 @@ def process_cyclegan_dataset(
                     os.path.join(train_b_dir, f"{counter}{ext}"),
                 )
                 counter += 1
+    print(f"{counter} trainB images")
 
 
 if __name__ == "__main__":

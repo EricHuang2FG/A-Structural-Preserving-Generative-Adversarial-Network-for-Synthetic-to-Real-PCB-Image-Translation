@@ -86,26 +86,22 @@ def linear_lr_schedule(
 
 
 def linear_lambda_stucture_schedule(
-    num_epochs: int,
-    lambda_start: float = 5.0,
-    lambda_end: float = 1.0,
-    decay_start_epoch: int = 0,
-    decay_end_epoch: int | None = None,
+    lambda_start: float = 0.0,
+    lambda_end: float = 5.0,
+    warmup_start_epoch: int = 25,
+    warmup_end_epoch: int = 75,
 ) -> Callable:
-    if decay_end_epoch is None:
-        decay_end_epoch = num_epochs
-
     def schedule(epoch: int) -> float:
-        if epoch < decay_start_epoch:
+        if epoch < warmup_start_epoch:
             return lambda_start
 
-        if epoch >= decay_end_epoch:
+        if epoch >= warmup_end_epoch:
             return lambda_end
 
-        slope: float = (epoch - decay_start_epoch) / (
-            decay_end_epoch - decay_start_epoch
+        slope: float = (epoch - warmup_start_epoch) / (
+            warmup_end_epoch - warmup_start_epoch
         )
-        return lambda_start - slope * (lambda_start - lambda_end)
+        return lambda_end * slope
 
     return schedule
 
@@ -207,10 +203,13 @@ def train_spresgan(
     num_epochs: int = 200,
     lambda_cycle: float = 10.0,
     lambda_identity: float = 5.0,
-    lambda_structure_start: float = 5.0,
+    lambda_structure_start: float = 0.0,
     lambda_structure_end: float = 1.0,
+    lambda_structure_warmup_start_epoch: int = 25,
+    lambda_structure_warmup_end_epoch: int = 75,
     validation_frequency: int = 10,
     compute_validation_metrics: bool = True,
+    image_mask_as_generator_input: bool = True,
     resume_checkpoint_path: str | None = None,
 ) -> None:
     if compute_validation_metrics and (
@@ -281,7 +280,9 @@ def train_spresgan(
         fid_metric = FrechetInceptionDistance(feature=2048, normalize=False).to(device)
 
     # define generators, discriminators and load the frozen segmentor
-    generator_in_channels: int = 4
+    generator_in_channels: int = 3
+    if image_mask_as_generator_input:
+        generator_in_channels = 4
     g_a_to_b: ResNetGenerator = ResNetGenerator(
         in_channels=generator_in_channels, out_channels=3
     ).to(device)
@@ -327,7 +328,10 @@ def train_spresgan(
     buffer_fake_b: ImagePool = ImagePool()
 
     lambda_structure_schedule: Callable = linear_lambda_stucture_schedule(
-        num_epochs, lambda_start=lambda_structure_start, lambda_end=lambda_structure_end
+        lambda_start=lambda_structure_start,
+        lambda_end=lambda_structure_end,
+        warmup_start_epoch=lambda_structure_warmup_start_epoch,
+        warmup_end_epoch=lambda_structure_warmup_end_epoch,
     )
 
     # define arrays that track losses
@@ -408,8 +412,9 @@ def train_spresgan(
             real_b: torch.Tensor = batch["real_b"].to(device)
             mask_a: torch.Tensor = batch["mask_a"].to(device)
 
-            mask_b_predicted: torch.Tensor | None = None
-            mask_b_predicted = predict_binary_mask_segmentor(segmentor, real_b)
+            if image_mask_as_generator_input:
+                mask_b_predicted: torch.Tensor | None = None
+                mask_b_predicted = predict_binary_mask_segmentor(segmentor, real_b)
 
             with torch.no_grad():
                 probe_shape: torch.Size = d_b(real_b).shape
@@ -419,25 +424,39 @@ def train_spresgan(
             # train generators
             opt_g.zero_grad()
 
-            fake_b: torch.Tensor = g_a_to_b(torch.cat([real_a, mask_a], dim=1))
-            fake_a: torch.Tensor = g_b_to_a(
-                torch.cat([real_b, mask_b_predicted], dim=1)
-            )
+            if image_mask_as_generator_input:
+                fake_b: torch.Tensor = g_a_to_b(torch.cat([real_a, mask_a], dim=1))
+                fake_a: torch.Tensor = g_b_to_a(
+                    torch.cat([real_b, mask_b_predicted], dim=1)
+                )
+            else:
+                fake_b: torch.Tensor = g_a_to_b(real_a)
+                fake_a: torch.Tensor = g_b_to_a(real_b)
 
             gan_a_to_b_loss: torch.Tensor = adversarial_loss(d_b(fake_b), valid)
             gan_b_to_a_loss: torch.Tensor = adversarial_loss(d_a(fake_a), valid)
 
-            recovered_a: torch.Tensor = g_b_to_a(torch.cat([fake_b, mask_a], dim=1))
-            recovered_b: torch.Tensor = g_a_to_b(
-                torch.cat([fake_a, mask_b_predicted], dim=1)
-            )
+            if image_mask_as_generator_input:
+                recovered_a: torch.Tensor = g_b_to_a(torch.cat([fake_b, mask_a], dim=1))
+                recovered_b: torch.Tensor = g_a_to_b(
+                    torch.cat([fake_a, mask_b_predicted], dim=1)
+                )
+            else:
+                recovered_a: torch.Tensor = g_b_to_a(fake_b)
+                recovered_b: torch.Tensor = g_a_to_b(fake_a)
+
             cycle_a_loss: torch.Tensor = cycle_loss(recovered_a, real_a)
             cycle_b_loss: torch.Tensor = cycle_loss(recovered_b, real_b)
 
-            identity_a: torch.Tensor = g_b_to_a(torch.cat([real_a, mask_a], dim=1))
-            identity_b: torch.Tensor = g_a_to_b(
-                torch.cat([real_b, mask_b_predicted], dim=1)
-            )
+            if image_mask_as_generator_input:
+                identity_a: torch.Tensor = g_b_to_a(torch.cat([real_a, mask_a], dim=1))
+                identity_b: torch.Tensor = g_a_to_b(
+                    torch.cat([real_b, mask_b_predicted], dim=1)
+                )
+            else:
+                identity_a: torch.Tensor = g_b_to_a(real_a)
+                identity_b: torch.Tensor = g_a_to_b(real_b)
+
             identity_a_loss: torch.Tensor = identity_loss(identity_a, real_a)
             identity_b_loss: torch.Tensor = identity_loss(identity_b, real_b)
 
@@ -626,5 +645,10 @@ if __name__ == "__main__":
         "data/real_images_split/validation",
         segmentor_model_path="models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
         num_epochs=200,
+        lambda_structure_start=0.0,
+        lambda_structure_end=1.0,
+        lambda_structure_warmup_start_epoch=25,
+        lambda_structure_warmup_end_epoch=75,
         compute_validation_metrics=False,
+        image_mask_as_generator_input=False,
     )

@@ -94,7 +94,7 @@ def remove_background_rotate_axis_aligned(
     return result
 
 
-def process_real_images(
+def process_real_images_pcb_dslr(
     source_directory: str,
     destination_directory: str,
     crop_padding_px: int = 10,
@@ -172,9 +172,83 @@ def process_real_images(
 
             cv2.imwrite(destination, canvas)
 
-            print(f"Real PCB image {counter} finished processing")
+            print(f"Real PCB image from PCB-DSLR: {counter} finished processing")
 
             counter += 1
+
+
+def process_real_images_pcb_data(
+    source_directory: str,
+    destination_directory: str,
+) -> None:
+    os.makedirs(destination_directory, exist_ok=True)
+
+    counter: int = (
+        len(
+            [
+                file
+                for file in os.listdir(destination_directory)
+                if file.lower().endswith(".jpg")
+            ]
+        )
+        + 1
+    )
+
+    skipped: list[str] = []
+
+    filename: str
+    for filename in sorted(os.listdir(source_directory)):
+        if not filename.lower().endswith(".jpg"):
+            continue
+
+        image_path: str = os.path.join(source_directory, filename)
+        image: np.ndarray | None = cv2.imread(image_path)
+
+        if image is None:
+            skipped.append(filename)
+            continue
+
+        height: int
+        width: int
+        height, width = image.shape[:2]
+
+        scale: float = min(
+            (BOARD_RENDER_WIDTH - 16) / max(height, width),
+            (BOARD_RENDER_HEIGHT - 16) / max(height, width),
+        )
+        new_width: int = int(round(width * scale))
+        new_height: int = int(round(height * scale))
+
+        resized: np.ndarray = cv2.resize(
+            image,
+            (new_width, new_height),
+            interpolation=cv2.INTER_AREA,
+        )
+
+        canvas: np.ndarray = (
+            np.ones(
+                ((BOARD_RENDER_HEIGHT - 16), (BOARD_RENDER_WIDTH - 16), 3),
+                dtype=np.uint8,
+            )
+            * 255
+        )
+
+        x_offset: int = (BOARD_RENDER_WIDTH - 16 - new_width) // 2
+        y_offset: int = (BOARD_RENDER_HEIGHT - 16 - new_height) // 2
+
+        canvas[
+            y_offset : y_offset + new_height,
+            x_offset : x_offset + new_width,
+        ] = resized
+
+        destination: str = os.path.join(destination_directory, f"{counter}_{filename}")
+        cv2.imwrite(destination, canvas)
+
+        print(f"Real PCB image from pcb_data: {counter} finished processing")
+        counter += 1
+
+    if skipped:
+        print(f"{len(skipped)} images skipped: {skipped}")
 
 
 def split_real_dataset(
@@ -240,7 +314,8 @@ def split_real_dataset(
 
 
 if __name__ == "__main__":
-    # process_real_images("data/PCB-DSLR", "data/real_images")
+    process_real_images_pcb_dslr("data/PCB-DSLR", "data/real_images")
+    process_real_images_pcb_data("data/pcb_data/train", "data/real_images")
     split_real_dataset(
         "data/real_images",
         "data/real_images_split/train",

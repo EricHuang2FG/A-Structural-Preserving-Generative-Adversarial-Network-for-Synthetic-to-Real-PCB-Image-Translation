@@ -13,6 +13,7 @@ data/real_images/*
 data/synthetic_split/*
 data/cyclegan_data/*
 data/real_images_split/*
+data/pcb_data/*
 
 !data/open-schematics/.gitkeep
 !data/synthetic/.gitkeep
@@ -21,6 +22,7 @@ data/real_images_split/*
 !data/synthetic_split/.gitkeep
 !data/cyclegan_data/.gitkeep
 !data/real_images_split/.gitkeep
+!data/pcb_data/.gitkeep
 
 models/segmentor/best/*
 models/segmentor/checkpoints/*
