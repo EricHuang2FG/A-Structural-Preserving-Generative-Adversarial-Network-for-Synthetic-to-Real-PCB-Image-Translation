@@ -1,4 +1,3 @@
-import os
 import torch
 import numpy as np
 from torchmetrics.image.fid import FrechetInceptionDistance
@@ -33,7 +32,7 @@ def binary_iou(predicted_mask: torch.Tensor, ground_truth_mask: torch.Tensor) ->
     return intersection / union
 
 
-def compute_overall_iou_fid(
+def compute_overall_iou_fid_from_images(
     mask_translated_pairs: list[
         tuple[str, str]
     ],  # [(ground_truth_mask_path, translated_image_path), ...]
@@ -89,19 +88,19 @@ def compute_overall_iou_fid(
 
 if __name__ == "__main__":
     # compute metrics for CycleGAN
-    compute_overall_iou_fid(
+    compute_overall_iou_fid_from_images(
         get_semantic_mask_translated_image_paths_pair(
             "data/synthetic_split/test", "outputs/cyclegan/images"
         ),
-        get_real_image_paths("data/real_images"),
-        "models/segmentor/best/UNetSegmentor_bs16_lr0.0001_best.model",
+        get_real_image_paths("data/real_images_split/test"),
+        "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
     )
 
     # compute metrics for SPresGAN
-    compute_overall_iou_fid(
+    compute_overall_iou_fid_from_images(
         get_semantic_mask_translated_image_paths_pair(
             "data/synthetic_split/test", "outputs/spresgan"
         ),
-        get_real_image_paths("data/real_images"),
-        "models/segmentor/best/UNetSegmentor_bs16_lr0.0001_best.model",
+        get_real_image_paths("data/real_images_split/test"),
+        "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
     )

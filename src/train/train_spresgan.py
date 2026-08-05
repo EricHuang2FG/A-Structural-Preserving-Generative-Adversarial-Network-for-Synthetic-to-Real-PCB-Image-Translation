@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from typing import Callable
 
 from torch.utils.data import DataLoader
+from torchmetrics.image.fid import FrechetInceptionDistance
 
 from src.data_processing.datasets import (
     PCBSPresGANSyntheticDataset,
@@ -22,6 +23,7 @@ from src.inference.inference_segmentor import (
     predict_binary_mask_segmentor,
     predict_foreground_logit_segmentor,
 )
+from src.inference.inference_spresgan import evaluate_spresgan
 from src.utils.constants import (
     TARGET_IMAGE_SIZE,
     SEED,
@@ -83,11 +85,39 @@ def linear_lr_schedule(
     return schedule_multiplier
 
 
+def linear_lambda_stucture_schedule(
+    num_epochs: int,
+    lambda_start: float = 5.0,
+    lambda_end: float = 1.0,
+    decay_start_epoch: int = 0,
+    decay_end_epoch: int | None = None,
+) -> Callable:
+    if decay_end_epoch is None:
+        decay_end_epoch = num_epochs
+
+    def schedule(epoch: int) -> float:
+        if epoch < decay_start_epoch:
+            return lambda_start
+
+        if epoch >= decay_end_epoch:
+            return lambda_end
+
+        slope: float = (epoch - decay_start_epoch) / (
+            decay_end_epoch - decay_start_epoch
+        )
+        return lambda_start - slope * (lambda_start - lambda_end)
+
+    return schedule
+
+
 def plot_spresgan_training_curves(
     generator_loss: np.ndarray,
     discriminator_a_loss: np.ndarray,
     discriminator_b_loss: np.ndarray,
     structural_loss: np.ndarray | None,
+    validation_epochs: list[int],
+    validation_iou: list[float],
+    validation_fid: list[float],
     output_path_template: str,  # must have {{ type }} in the string
     plot: bool = False,
 ) -> None:
@@ -127,6 +157,29 @@ def plot_spresgan_training_curves(
     if plot:
         plt.show()
 
+    # validation IoU
+    if validation_epochs:
+        plt.figure()
+        plt.title("Validation Segmentor IoU vs. Epochs")
+        plt.plot(validation_epochs, validation_iou, label="Validation IoU", marker="o")
+        plt.xlabel("Epoch")
+        plt.ylabel("IoU")
+        plt.legend(loc="best")
+        plt.savefig(output_path_template.replace("{{ type }}", "validation_iou"))
+        if plot:
+            plt.show()
+
+        # validation FID
+        plt.figure()
+        plt.title("Validation FID vs. Epochs")
+        plt.plot(validation_epochs, validation_fid, label="Validation FID", marker="o")
+        plt.xlabel("Epoch")
+        plt.ylabel("FID")
+        plt.legend(loc="best")
+        plt.savefig(output_path_template.replace("{{ type }}", "validation_fid"))
+        if plot:
+            plt.show()
+
     # save raw metrics
     metrics_path: str = output_path_template.replace("{{ type }}", "metrics")
     metrics_path = metrics_path.rsplit(".", 1)[0] + ".npz"
@@ -135,6 +188,9 @@ def plot_spresgan_training_curves(
         "discriminator_a_loss": discriminator_a_loss,
         "discriminator_b_loss": discriminator_b_loss,
         "structure_loss": structural_loss,
+        "validation_epochs": np.array(validation_epochs),
+        "validation_iou": np.array(validation_iou),
+        "validation_fid": np.array(validation_fid),
     }
     np.savez(metrics_path, **metrics_mapping)
 
@@ -142,6 +198,8 @@ def plot_spresgan_training_curves(
 def train_spresgan(
     synthetic_data_root_directory: str,
     real_data_root_directory: str,
+    synthetic_validation_data_root_directory: str,
+    real_validation_data_root_directory: str,
     segmentor_model_path: str = "models/segmentor/best/best.model",
     target_image_size: int = TARGET_IMAGE_SIZE,
     num_classes: int = len(CLASS_TO_SEMANTIC_INDEX_MAPPING),
@@ -150,7 +208,9 @@ def train_spresgan(
     num_epochs: int = 200,
     lambda_cycle: float = 10.0,
     lambda_identity: float = 5.0,
-    lambda_structure: float = 10.0,
+    lambda_structure_start: float = 5.0,
+    lambda_structure_end: float = 1.0,
+    validation_frequency: int = 10,
     resume_checkpoint_path: str | None = None,
 ) -> None:
     torch.manual_seed(SEED)
@@ -164,7 +224,7 @@ def train_spresgan(
 
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # load data
+    # load training data
     synthetic_dataset: PCBSPresGANSyntheticDataset = PCBSPresGANSyntheticDataset(
         synthetic_data_root_directory, target_image_size
     )
@@ -179,6 +239,27 @@ def train_spresgan(
     )
     print(
         f"{len(synthetic_dataset)} synthetic, {len(real_dataset)} real -> {len(paired)} pairs/epoch",
+        flush=True,
+    )
+
+    # load validation data
+    synthetic_validation_dataset: PCBSPresGANSyntheticDataset = (
+        PCBSPresGANSyntheticDataset(
+            synthetic_validation_data_root_directory, target_image_size
+        )
+    )
+    synthetic_validation_loader: DataLoader = DataLoader(
+        synthetic_validation_dataset, batch_size=batch_size, shuffle=False
+    )
+    real_validation_dataset: PCBSPresGANRealDataset = PCBSPresGANRealDataset(
+        real_validation_data_root_directory, target_image_size
+    )
+    real_validation_loader: DataLoader = DataLoader(
+        real_validation_dataset, batch_size=batch_size, shuffle=False
+    )
+    print(
+        f"{len(synthetic_validation_dataset)} synthetic validation, "
+        f"{len(real_validation_dataset)} real validation",
         flush=True,
     )
 
@@ -228,14 +309,25 @@ def train_spresgan(
     buffer_fake_a: ImagePool = ImagePool()
     buffer_fake_b: ImagePool = ImagePool()
 
+    lambda_structure_schedule: Callable = linear_lambda_stucture_schedule(
+        num_epochs, lambda_start=lambda_structure_start, lambda_end=lambda_structure_end
+    )
+
     # define arrays that track losses
     g_losses: np.ndarray = np.zeros(num_epochs)
     d_a_losses: np.ndarray = np.zeros(num_epochs)
     d_b_losses: np.ndarray = np.zeros(num_epochs)
     structure_losses: np.ndarray = np.zeros(num_epochs)
 
+    # track validation metrics
+    validation_epochs: list[int] = []
+    validation_iou_values: list[float] = []
+    validation_fid_values: list[float] = []
+
     start_epoch: int = 0
     total_epochs_ran: int = 0
+    best_validation_iou: float = -float("inf")
+    best_validation_fid: float = float("inf")
 
     # load checkpoint information
     if resume_checkpoint_path is not None:
@@ -259,6 +351,14 @@ def train_spresgan(
             structure_losses[: len(checkpoint["structure_losses"])] = checkpoint[
                 "structure_losses"
             ]
+        if checkpoint.get("validation_epochs") is not None:
+            validation_epochs = list(checkpoint["validation_epochs"])
+            validation_iou_values = list(checkpoint["validation_iou_values"])
+            validation_fid_values = list(checkpoint["validation_fid_values"])
+        if checkpoint.get("best_validation_iou") is not None:
+            best_validation_iou = checkpoint["best_validation_iou"]
+        if checkpoint.get("best_validation_fid") is not None:
+            best_validation_fid = checkpoint["best_validation_fid"]
 
         print(
             f"Resumed from epoch {total_epochs_ran} ({resume_checkpoint_path})",
@@ -274,6 +374,10 @@ def train_spresgan(
         .replace("{{ learning_rate }}", str(learning_rate))
     )
 
+    fid_metric: FrechetInceptionDistance = FrechetInceptionDistance(
+        feature=2048, normalize=False
+    ).to(device)
+
     start_time: float = time.perf_counter()
 
     for epoch in range(start_epoch, num_epochs):
@@ -282,6 +386,8 @@ def train_spresgan(
         epoch_d_b_loss: float = 0.0
         epoch_loss_structure: float = 0.0
         num_batches: int = 0
+
+        curr_lambda_structure: float = lambda_structure_schedule(epoch)
 
         epoch_start_time: float = time.perf_counter()
         for batch in loader:
@@ -337,7 +443,7 @@ def train_spresgan(
             loss_structure: torch.Tensor = structure_loss_function(
                 predicted_logit, mask_a
             )
-            g_loss = g_loss + lambda_structure * loss_structure
+            g_loss = g_loss + curr_lambda_structure * loss_structure
             loss_structure_value = loss_structure.item()
 
             g_loss.backward()
@@ -386,11 +492,51 @@ def train_spresgan(
                 f"Epoch {epoch + 1}/{num_epochs}: g_loss={g_losses[epoch]:.4f} "
                 f"d_a_loss={d_a_losses[epoch]:.4f} d_b_loss={d_b_losses[epoch]:.4f} "
                 f"loss_structure={structure_losses[epoch]:.4f} "
+                f"lambda_structure={curr_lambda_structure:.4f} "
                 f"Epoch training time={(epoch_end_time - epoch_start_time):.4f} s"
             ),
             flush=True,
         )
 
+        # periodic validation with IoU and FID
+        if (epoch + 1) % validation_frequency == 0:
+            validation_metrics: dict[str, float] = evaluate_spresgan(
+                g_a_to_b,
+                segmentor,
+                synthetic_validation_loader,
+                real_validation_loader,
+                fid_metric,
+                device,
+            )
+
+            validation_epochs.append(epoch + 1)
+            validation_iou_values.append(validation_metrics["validation_iou"])
+            validation_fid_values.append(validation_metrics["validation_fid"])
+
+            print(
+                f"Epoch {epoch + 1} validation | "
+                f"IoU: {validation_metrics['validation_iou']:.4f} "
+                f"FID: {validation_metrics['validation_fid']:.4f}",
+                flush=True,
+            )
+
+            if validation_metrics["validation_iou"] > best_validation_iou:
+                best_validation_iou = validation_metrics["validation_iou"]
+
+                print(
+                    f"New best validation_iou {best_validation_iou:.4f} at epoch {epoch + 1}",
+                    flush=True,
+                )
+
+            if validation_metrics["validation_fid"] < best_validation_fid:
+                best_validation_fid = validation_metrics["validation_fid"]
+
+                print(
+                    f"New best validation_fid {best_validation_fid:.4f} at epoch {epoch + 1}",
+                    flush=True,
+                )
+
+        # save checkpoint every 5 epochs
         if (epoch + 1) % 5 == 0:
             torch.save(
                 {
@@ -407,6 +553,11 @@ def train_spresgan(
                     "d_a_losses": d_a_losses[: epoch + 1],
                     "d_b_losses": d_b_losses[: epoch + 1],
                     "structure_losses": (structure_losses[: epoch + 1]),
+                    "validation_epochs": validation_epochs,
+                    "validation_iou_values": validation_iou_values,
+                    "validation_fid_values": validation_fid_values,
+                    "best_validation_iou": best_validation_iou,
+                    "best_validation_fid": best_validation_fid,
                 },
                 os.path.join(
                     SPRESGAN_MODEL_CHECKPOINTS_DIRECTORY,
@@ -416,6 +567,8 @@ def train_spresgan(
 
     end_time: float = time.perf_counter()
     print(f"Total time elapsed: {(end_time - start_time):.4f}s", flush=True)
+    print(f"Best validation IoU achieved: {best_validation_iou:.4f}", flush=True)
+    print(f"Best validation FID achieved: {best_validation_fid:.4f}", flush=True)
 
     torch.save(
         g_a_to_b.state_dict(),
@@ -437,6 +590,9 @@ def train_spresgan(
         d_a_losses[:total_epochs_ran],
         d_b_losses[:total_epochs_ran],
         structure_losses[:total_epochs_ran],
+        validation_epochs,
+        validation_iou_values,
+        validation_fid_values,
         os.path.join(
             SPRESGAN_MODEL_TRAINING_CURVE_DIRECTORY,
             TRAINING_CURVE_FILE_NAME_TEMPLATE.replace(
@@ -452,7 +608,9 @@ def train_spresgan(
 if __name__ == "__main__":
     train_spresgan(
         "data/synthetic_split/train",
-        "data/real_images",
+        "data/real_images_split/train",
+        "data/synthetic_split/validation",
+        "data/real_images_split/validation",
         segmentor_model_path="models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
         num_epochs=200,
     )

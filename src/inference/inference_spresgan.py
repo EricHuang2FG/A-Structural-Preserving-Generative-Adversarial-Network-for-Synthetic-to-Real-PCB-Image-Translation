@@ -2,17 +2,82 @@ import os
 
 import cv2
 import torch
+import numpy as np
+
+from torch.utils.data import DataLoader
+from torchmetrics.image.fid import FrechetInceptionDistance
 
 from src.model.spresgan import ResNetGenerator
+from src.model.segmentor import UNetSegmentor
 from src.utils.utils import (
     image_to_tensor,
     mask_to_binary_tensor,
     tensor_to_image_batched,
+    normalized_tensor_to_rgb_uint8,
 )
 from src.utils.constants import TARGET_IMAGE_SIZE
-from src.data_processing.utils import (
-    get_synthetic_data_paths_with_semantic_mask,
-)
+from src.data_processing.utils import get_synthetic_data_paths_with_semantic_mask
+from src.inference.metrics import binary_iou
+from src.inference.inference_segmentor import predict_binary_mask_segmentor
+
+
+def evaluate_spresgan(
+    g_a_to_b: ResNetGenerator,
+    segmentor: UNetSegmentor,
+    synthetic_validation_loader: DataLoader,
+    real_validation_loader: DataLoader,
+    fid_metric: FrechetInceptionDistance,
+    device: torch.device,
+) -> dict[str, float]:
+    g_a_to_b.eval()
+    fid_metric.reset()
+
+    # register the real-domain reference distribution for this evaluation call
+    real_b_validation: torch.Tensor
+    for real_b_validation in real_validation_loader:
+        real_b_validation = real_b_validation.to(device)
+
+        sample_index: int
+        for sample_index in range(real_b_validation.shape[0]):
+            fid_metric.update(
+                normalized_tensor_to_rgb_uint8(
+                    real_b_validation[sample_index]
+                ).unsqueeze(0),
+                real=True,
+            )
+
+    ious: list[float] = []
+
+    real_a: torch.Tensor
+    mask_a: torch.Tensor
+    for real_a, mask_a in synthetic_validation_loader:
+        real_a = real_a.to(device)
+        mask_a = mask_a.to(device)
+
+        fake_b: torch.Tensor = g_a_to_b(torch.cat([real_a, mask_a], dim=1))
+
+        predicted_binary_mask: torch.Tensor = predict_binary_mask_segmentor(
+            segmentor, fake_b
+        )
+
+        for sample_index in range(fake_b.shape[0]):
+            ious.append(
+                binary_iou(
+                    predicted_binary_mask[sample_index],
+                    mask_a[sample_index],
+                )
+            )
+            fid_metric.update(
+                normalized_tensor_to_rgb_uint8(fake_b[sample_index]).unsqueeze(0),
+                real=False,
+            )
+
+    g_a_to_b.train()
+
+    return {
+        "validation_iou": float(np.mean(ious)) if ious else 0.0,
+        "validation_fid": float(fid_metric.compute().item()),
+    }
 
 
 def load_generator(model_path: str, device: torch.device) -> ResNetGenerator:
@@ -74,6 +139,7 @@ def translate_all_images_spresgan(
         translate_one_image_spresgan(
             generator, image_path, mask_path, output_path, device, target_image_size
         )
+        print(f"Translated image {index}")
 
     print(f"Translated {len(data_paths)} images to {output_directory}")
 

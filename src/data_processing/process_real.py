@@ -1,10 +1,13 @@
 import os
 import re
+import random
+import shutil
+
 import cv2
 
 import numpy as np
 
-from src.utils.constants import BOARD_RENDER_WIDTH, BOARD_RENDER_HEIGHT
+from src.utils.constants import BOARD_RENDER_WIDTH, BOARD_RENDER_HEIGHT, SEED
 
 
 def remove_background_rotate_axis_aligned(
@@ -174,5 +177,73 @@ def process_real_images(
             counter += 1
 
 
+def split_real_dataset(
+    source_directory: str,
+    train_directory: str,
+    validation_directory: str,
+    test_directory: str,
+    validation_ratio: float = 0.1,
+    test_ratio: float = 0.1,
+    seed: int = SEED,
+) -> None:
+    if os.path.isdir(train_directory):
+        shutil.rmtree(train_directory)
+    if os.path.isdir(validation_directory):
+        shutil.rmtree(validation_directory)
+    if os.path.isdir(test_directory):
+        shutil.rmtree(test_directory)
+
+    os.makedirs(train_directory, exist_ok=True)
+    os.makedirs(validation_directory, exist_ok=True)
+    os.makedirs(test_directory, exist_ok=True)
+
+    image_files: list[str] = [
+        filename
+        for filename in os.listdir(source_directory)
+        if os.path.isfile(os.path.join(source_directory, filename))
+    ]
+
+    # seed random
+    random.seed(seed)
+    random.shuffle(image_files)
+
+    num_files: int = len(image_files)
+    test_split_index: int = int(num_files * (1 - test_ratio - validation_ratio))
+    validation_split_index: int = int(num_files * (1 - test_ratio))
+
+    train_files: list[str] = image_files[:test_split_index]
+    validation_files: list[str] = image_files[test_split_index:validation_split_index]
+    test_files: list[str] = image_files[validation_split_index:]
+
+    print(f"Total number of real images: {num_files}")
+    print(f"Train images: {len(train_files)}")
+    print(f"Validation images: {len(validation_files)}")
+    print(f"Test images: {len(test_files)}")
+
+    for filename in train_files:
+        shutil.copy2(
+            os.path.join(source_directory, filename),
+            os.path.join(train_directory, filename),
+        )
+
+    for filename in validation_files:
+        shutil.copy2(
+            os.path.join(source_directory, filename),
+            os.path.join(validation_directory, filename),
+        )
+
+    for filename in test_files:
+        shutil.copy2(
+            os.path.join(source_directory, filename),
+            os.path.join(test_directory, filename),
+        )
+
+
 if __name__ == "__main__":
-    process_real_images("data/PCB-DSLR", "data/real_images")
+    # process_real_images("data/PCB-DSLR", "data/real_images")
+    split_real_dataset(
+        "data/real_images",
+        "data/real_images_split/train",
+        "data/real_images_split/validation",
+        "data/real_images_split/test",
+    )

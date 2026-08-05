@@ -81,6 +81,6 @@ if __name__ == "__main__":
     process_cyclegan_dataset(
         synthetic_train_dir="data/synthetic_split/train",
         synthetic_test_dir="data/synthetic_split/test",
-        real_dir="data/real_images",
+        real_dir="data/real_images_split/train",
         output_dir="data/cyclegan_data",
     )

@@ -68,13 +68,13 @@ class ResNetGenerator(nn.Module):
             upsampling_out_channels: int = upsampling_in_channels // 2
             generator_layers.extend(
                 [
-                    nn.ConvTranspose2d(
+                    nn.Upsample(scale_factor=2, mode="nearest"),
+                    nn.Conv2d(
                         upsampling_in_channels,
                         upsampling_out_channels,
                         kernel_size=3,
-                        stride=2,
+                        stride=1,
                         padding=1,
-                        output_padding=1,
                     ),
                     nn.InstanceNorm2d(upsampling_out_channels),
                     nn.ReLU(inplace=True),

@@ -890,16 +890,21 @@ def process_multiple_pcbs(
 def split_dataset(
     source_directory: str,
     train_directory: str,
+    validation_directory: str,
     test_directory: str,
+    validation_ratio: float = 0.1,
     test_ratio: float = 0.1,
     seed: int = SEED,
 ) -> None:
     if os.path.isdir(train_directory):
         shutil.rmtree(train_directory)
+    if os.path.isdir(validation_directory):
+        shutil.rmtree(validation_directory)
     if os.path.isdir(test_directory):
         shutil.rmtree(test_directory)
 
     os.makedirs(train_directory, exist_ok=True)
+    os.makedirs(validation_directory, exist_ok=True)
     os.makedirs(test_directory, exist_ok=True)
 
     pcb_folders: list[str] = [
@@ -912,19 +917,29 @@ def split_dataset(
     random.seed(seed)
     random.shuffle(pcb_folders)
 
-    split_index: int = int(len(pcb_folders) * (1 - test_ratio))
+    num_folders: int = len(pcb_folders)
+    test_split_index: int = int(num_folders * (1 - test_ratio - validation_ratio))
+    validation_split_index: int = int(num_folders * (1 - test_ratio))
 
-    train_folders: list[str] = pcb_folders[:split_index]
-    test_folders: list[str] = pcb_folders[split_index:]
+    train_folders: list[str] = pcb_folders[:test_split_index]
+    validation_folders: list[str] = pcb_folders[test_split_index:validation_split_index]
+    test_folders: list[str] = pcb_folders[validation_split_index:]
 
-    print(f"Total number of PCBs: {len(pcb_folders)}")
+    print(f"Total number of PCBs: {num_folders}")
     print(f"Train PCBs: {len(train_folders)}")
+    print(f"Validation PCBs: {len(validation_folders)}")
     print(f"Test PCBs: {len(test_folders)}")
 
     for folder in train_folders:
         shutil.copytree(
             os.path.join(source_directory, folder),
             os.path.join(train_directory, folder),
+        )
+
+    for folder in validation_folders:
+        shutil.copytree(
+            os.path.join(source_directory, folder),
+            os.path.join(validation_directory, folder),
         )
 
     for folder in test_folders:
@@ -935,11 +950,14 @@ def split_dataset(
 
 
 if __name__ == "__main__":
-    wx.Log.SetLogLevel(wx.LOG_Error)
-    app: wx.App = wx.App(False)
-    process_multiple_pcbs(
-        "data/open-schematics", "data/synthetic", 1, 2500, process_both_sides=False
-    )
+    # wx.Log.SetLogLevel(wx.LOG_Error)
+    # app: wx.App = wx.App(False)
+    # process_multiple_pcbs(
+    #     "data/open-schematics", "data/synthetic", 1, 2500, process_both_sides=False
+    # )
     split_dataset(
-        "data/synthetic", "data/synthetic_split/train", "data/synthetic_split/test"
+        "data/synthetic",
+        "data/synthetic_split/train",
+        "data/synthetic_split/validation",
+        "data/synthetic_split/test",
     )
