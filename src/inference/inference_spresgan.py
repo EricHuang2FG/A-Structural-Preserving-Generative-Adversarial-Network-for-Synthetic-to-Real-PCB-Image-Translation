@@ -28,6 +28,7 @@ def evaluate_spresgan(
     real_validation_loader: DataLoader,
     fid_metric: FrechetInceptionDistance,
     device: torch.device,
+    image_mask_as_generator_input: bool = True,
 ) -> dict[str, float]:
     g_a_to_b.eval()
     fid_metric.reset()
@@ -54,7 +55,10 @@ def evaluate_spresgan(
         real_a = real_a.to(device)
         mask_a = mask_a.to(device)
 
-        fake_b: torch.Tensor = g_a_to_b(torch.cat([real_a, mask_a], dim=1))
+        if image_mask_as_generator_input:
+            fake_b: torch.Tensor = g_a_to_b(torch.cat([real_a, mask_a], dim=1))
+        else:
+            fake_b: torch.Tensor = g_a_to_b(real_a)
 
         predicted_binary_mask: torch.Tensor = predict_binary_mask_segmentor(
             segmentor, fake_b
@@ -80,8 +84,12 @@ def evaluate_spresgan(
     }
 
 
-def load_generator(model_path: str, device: torch.device) -> ResNetGenerator:
-    generator: ResNetGenerator = ResNetGenerator(in_channels=4).to(device)
+def load_generator(
+    model_path: str, device: torch.device, image_mask_as_generator_input: bool = True
+) -> ResNetGenerator:
+    generator: ResNetGenerator = ResNetGenerator(
+        in_channels=4 if image_mask_as_generator_input else 3
+    ).to(device)
     generator.load_state_dict(torch.load(model_path, map_location=device))
 
     generator.eval()
@@ -99,6 +107,7 @@ def translate_one_image_spresgan(
     mask_path: str,
     output_path: str,
     device: torch.device,
+    image_mask_as_generator_input: bool = True,
     target_image_size: int = TARGET_IMAGE_SIZE,
 ) -> None:
     image_tensor: torch.Tensor = (
@@ -109,7 +118,12 @@ def translate_one_image_spresgan(
     )
 
     with torch.no_grad():
-        generator_input: torch.Tensor = torch.cat([image_tensor, mask_tensor], dim=1)
+        if image_mask_as_generator_input:
+            generator_input: torch.Tensor = torch.cat(
+                [image_tensor, mask_tensor], dim=1
+            )
+        else:
+            generator_input: torch.Tensor = image_tensor
         fake_b: torch.Tensor = generator(generator_input)
 
     output_image = tensor_to_image_batched(fake_b)
@@ -120,12 +134,15 @@ def translate_all_images_spresgan(
     test_data_root_directory: str,
     output_directory: str,
     model_path: str,
+    image_mask_as_generator_input: bool = True,
     target_image_size: int = TARGET_IMAGE_SIZE,
 ) -> None:
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(output_directory, exist_ok=True)
 
-    generator: ResNetGenerator = load_generator(model_path, device)
+    generator: ResNetGenerator = load_generator(
+        model_path, device, image_mask_as_generator_input=image_mask_as_generator_input
+    )
 
     data_paths: list[tuple[str, str]] = get_synthetic_data_paths_with_semantic_mask(
         test_data_root_directory
@@ -137,7 +154,13 @@ def translate_all_images_spresgan(
     for index, (image_path, mask_path) in enumerate(data_paths, start=1):
         output_path: str = os.path.join(output_directory, f"{index}.png")
         translate_one_image_spresgan(
-            generator, image_path, mask_path, output_path, device, target_image_size
+            generator,
+            image_path,
+            mask_path,
+            output_path,
+            device,
+            image_mask_as_generator_input=image_mask_as_generator_input,
+            target_image_size=target_image_size,
         )
         print(f"Translated image {index}")
 
@@ -148,6 +171,7 @@ if __name__ == "__main__":
     translate_all_images_spresgan(
         "data/synthetic_split/test",
         "outputs/spresgan",
-        "models/spresgan/best/SPresGAN_bs2_lr0.0002_g_a_to_b_final.model",
+        "models/spresgan/best/SPresGAN_bs2_lr0.0002_g_a_to_b_final_l25.model",
+        image_mask_as_generator_input=False,
         target_image_size=TARGET_IMAGE_SIZE,
     )
