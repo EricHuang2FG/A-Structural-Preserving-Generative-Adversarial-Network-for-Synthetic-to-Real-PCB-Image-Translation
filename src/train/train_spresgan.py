@@ -272,7 +272,12 @@ def train_spresgan(
         synthetic_dataset, real_dataset
     )
     loader: DataLoader = DataLoader(
-        paired, batch_size=batch_size, shuffle=True, num_workers=4, drop_last=True
+        paired,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        drop_last=True,
+        persistent_workers=True,
     )
     print(
         f"{len(synthetic_dataset)} synthetic, {len(real_dataset)} real -> {len(paired)} pairs/epoch",
@@ -289,13 +294,18 @@ def train_spresgan(
         synthetic_validation_dataset,
         batch_size=batch_size,
         shuffle=False,
+        num_workers=0,
         drop_last=True,
     )
     real_validation_dataset: PCBSPresGANRealDataset = PCBSPresGANRealDataset(
         real_validation_data_root_directory, target_image_size
     )
     real_validation_loader: DataLoader = DataLoader(
-        real_validation_dataset, batch_size=batch_size, shuffle=True, drop_last=True
+        real_validation_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        drop_last=True,
     )
     print(
         f"{len(synthetic_validation_dataset)} synthetic validation, "

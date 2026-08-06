@@ -272,7 +272,7 @@ if __name__ == "__main__":
     translate_all_images_spresgan(
         "data/synthetic_split/test",
         "outputs/spresgan",
-        "models/spresgan/best/SPresGAN_bs2_lr0.0002_g_a_to_b_final_l10.model",
+        "models/spresgan/best/SPresGAN_bs2_lr0.0002_g_a_to_b_final_l25.model",
         image_mask_as_generator_input=False,
         target_image_size=TARGET_IMAGE_SIZE,
     )
