@@ -41,6 +41,7 @@ def compute_overall_iou_fid_from_images(
     segmentor_model_path: str,
     target_image_size: int = TARGET_IMAGE_SIZE,
     device: torch.device | None = None,
+    compute_iou: bool = True,
 ) -> None:
     device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -55,26 +56,27 @@ def compute_overall_iou_fid_from_images(
 
     ious: list[float] = []
 
-    mask_path: str
-    image_path: str
-    for mask_path, image_path in mask_translated_pairs:
-        image_tensor: torch.Tensor = (
-            image_to_tensor(image_path, size=target_image_size).unsqueeze(0).to(device)
-        )
+    if compute_iou:
+        mask_path: str
+        image_path: str
+        for mask_path, image_path in mask_translated_pairs:
+            image_tensor: torch.Tensor = (
+                image_to_tensor(image_path, size=target_image_size).unsqueeze(0).to(device)
+            )
 
-        predicted_binary_mask: torch.Tensor = predict_binary_mask_segmentor(
-            segmentor, image_tensor
-        )
-        true_mask: torch.Tensor = mask_to_binary_tensor(
-            mask_path, size=target_image_size
-        ).to(device)
+            predicted_binary_mask: torch.Tensor = predict_binary_mask_segmentor(
+                segmentor, image_tensor
+            )
+            true_mask: torch.Tensor = mask_to_binary_tensor(
+                mask_path, size=target_image_size
+            ).to(device)
 
-        ious.append(binary_iou(predicted_binary_mask.squeeze(0), true_mask))
+            ious.append(binary_iou(predicted_binary_mask.squeeze(0), true_mask))
 
-        fid.update(
-            normalized_tensor_to_rgb_uint8(image_tensor.squeeze(0)).unsqueeze(0),
-            real=False,
-        )
+            fid.update(
+                normalized_tensor_to_rgb_uint8(image_tensor.squeeze(0)).unsqueeze(0),
+                real=False,
+            )
 
     for real_path in real_image_paths:
         real_tensor: torch.Tensor = image_to_tensor(
@@ -93,6 +95,7 @@ if __name__ == "__main__":
         get_semantic_mask_paths_with_synthetic_data("data/synthetic_split/test"),
         get_real_image_paths("data/real_images_split/test"),
         "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
+        compute_iou=False
     )
 
     # compute metrics for CycleGAN

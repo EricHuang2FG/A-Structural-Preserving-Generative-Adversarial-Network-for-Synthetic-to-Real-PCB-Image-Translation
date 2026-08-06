@@ -107,22 +107,41 @@ def linear_lambda_stucture_schedule(
 
 
 def plot_spresgan_training_curves(
-    generator_loss: np.ndarray,
+    generator_a_loss: np.ndarray,
+    generator_b_loss: np.ndarray,
     discriminator_a_loss: np.ndarray,
     discriminator_b_loss: np.ndarray,
     structural_loss: np.ndarray | None,
     validation_epochs: list[int],
     validation_iou: list[float],
     validation_fid: list[float],
+    validation_generator_a_loss: list[float],
+    validation_generator_b_loss: list[float],
+    validation_d_a_loss: list[float],
+    validation_d_b_loss: list[float],
     output_path_template: str,  # must have {{ type }} in the string
+    compute_fid_iou: bool = False,
     plot: bool = False,
 ) -> None:
-    num_epochs: int = len(generator_loss) + 1
+    num_epochs: int = len(generator_a_loss) + 1
 
-    # generator losses
+    # generator loss: A and B, training vs validation
     plt.figure()
-    plt.title("Generator Loss vs. Epochs")
-    plt.plot(range(1, num_epochs), generator_loss, label="Generator Loss")
+    plt.title("Training and Validation Generator Loss vs. Epochs")
+    plt.plot(range(1, num_epochs), generator_a_loss, label="Generator A (Train)")
+    plt.plot(range(1, num_epochs), generator_b_loss, label="Generator B (Train)")
+    plt.plot(
+        validation_epochs,
+        validation_generator_a_loss,
+        label="Generator A (Validation)",
+        marker="o",
+    )
+    plt.plot(
+        validation_epochs,
+        validation_generator_b_loss,
+        label="Generator B (Validation)",
+        marker="o",
+    )
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.legend(loc="best")
@@ -130,11 +149,27 @@ def plot_spresgan_training_curves(
     if plot:
         plt.show()
 
-    # discriminator losses
+    # discriminator loss: A and B, training vs. validation
     plt.figure()
-    plt.title("Discriminator Loss vs. Epochs")
-    plt.plot(range(1, num_epochs), discriminator_a_loss, label="Discriminator A Loss")
-    plt.plot(range(1, num_epochs), discriminator_b_loss, label="Discriminator B Loss")
+    plt.title("Training and Validation Discriminator Loss vs. Epochs")
+    plt.plot(
+        range(1, num_epochs), discriminator_a_loss, label="Discriminator A (Train)"
+    )
+    plt.plot(
+        range(1, num_epochs), discriminator_b_loss, label="Discriminator B (Train)"
+    )
+    plt.plot(
+        validation_epochs,
+        validation_d_a_loss,
+        label="Discriminator A (Validation)",
+        marker="o",
+    )
+    plt.plot(
+        validation_epochs,
+        validation_d_b_loss,
+        label="Discriminator B (Validation)",
+        marker="o",
+    )
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.legend(loc="best")
@@ -144,7 +179,7 @@ def plot_spresgan_training_curves(
 
     # structural loss
     plt.figure()
-    plt.title("Structural Consistency Loss vs. Epochs")
+    plt.title("Structural Loss Loss vs. Epochs")
     plt.plot(range(1, num_epochs), structural_loss, label="Structure Loss")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
@@ -153,8 +188,7 @@ def plot_spresgan_training_curves(
     if plot:
         plt.show()
 
-    # validation IoU and FID. Only plotted if validation was actually computed
-    if validation_epochs:
+    if compute_fid_iou:
         plt.figure()
         plt.title("Validation Segmentor IoU vs. Epochs")
         plt.plot(validation_epochs, validation_iou, label="Validation IoU", marker="o")
@@ -175,17 +209,21 @@ def plot_spresgan_training_curves(
         if plot:
             plt.show()
 
-    # save raw metrics
     metrics_path: str = output_path_template.replace("{{ type }}", "metrics")
     metrics_path = metrics_path.rsplit(".", 1)[0] + ".npz"
     metrics_mapping: dict[str, np.ndarray] = {
-        "generator_loss": generator_loss,
+        "generator_a_loss": generator_a_loss,
+        "generator_b_loss": generator_b_loss,
         "discriminator_a_loss": discriminator_a_loss,
         "discriminator_b_loss": discriminator_b_loss,
         "structure_loss": structural_loss,
         "validation_epochs": np.array(validation_epochs),
         "validation_iou": np.array(validation_iou),
         "validation_fid": np.array(validation_fid),
+        "validation_generator_a_loss": np.array(validation_generator_a_loss),
+        "validation_generator_b_loss": np.array(validation_generator_b_loss),
+        "validation_d_a_loss": np.array(validation_d_a_loss),
+        "validation_d_b_loss": np.array(validation_d_b_loss),
     }
     np.savez(metrics_path, **metrics_mapping)
 
@@ -193,8 +231,8 @@ def plot_spresgan_training_curves(
 def train_spresgan(
     synthetic_data_root_directory: str,
     real_data_root_directory: str,
-    synthetic_validation_data_root_directory: str | None = None,
-    real_validation_data_root_directory: str | None = None,
+    synthetic_validation_data_root_directory: str,
+    real_validation_data_root_directory: str,
     segmentor_model_path: str = "models/segmentor/best/best.model",
     target_image_size: int = TARGET_IMAGE_SIZE,
     num_classes: int = len(CLASS_TO_SEMANTIC_INDEX_MAPPING),
@@ -207,21 +245,11 @@ def train_spresgan(
     lambda_structure_end: float = 1.0,
     lambda_structure_warmup_start_epoch: int = 25,
     lambda_structure_warmup_end_epoch: int = 75,
-    validation_frequency: int = 10,
-    compute_validation_metrics: bool = True,
+    validation_frequency: int = 5,
+    compute_validation_fid_iou: bool = False,
     image_mask_as_generator_input: bool = True,
     resume_checkpoint_path: str | None = None,
 ) -> None:
-    if compute_validation_metrics and (
-        synthetic_validation_data_root_directory is None
-        or real_validation_data_root_directory is None
-    ):
-        raise ValueError(
-            "compute_validation_metrics=True requires both "
-            "synthetic_validation_data_root_directory and "
-            "real_validation_data_root_directory to be provided."
-        )
-
     torch.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED)
     random.seed(SEED)
@@ -233,7 +261,7 @@ def train_spresgan(
 
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # load training data
+    # load synthetic and real train datasets and make DataLoaders
     synthetic_dataset: PCBSPresGANSyntheticDataset = PCBSPresGANSyntheticDataset(
         synthetic_data_root_directory, target_image_size
     )
@@ -251,38 +279,33 @@ def train_spresgan(
         flush=True,
     )
 
-    # load validation data and metrics, if enabled
-    synthetic_validation_loader: DataLoader | None = None
-    real_validation_loader: DataLoader | None = None
+    # load synthetic and real validation datasets and make DataLoaders
+    synthetic_validation_dataset: PCBSPresGANSyntheticDataset = (
+        PCBSPresGANSyntheticDataset(
+            synthetic_validation_data_root_directory, target_image_size
+        )
+    )
+    synthetic_validation_loader: DataLoader = DataLoader(
+        synthetic_validation_dataset, batch_size=batch_size, shuffle=False
+    )
+    real_validation_dataset: PCBSPresGANRealDataset = PCBSPresGANRealDataset(
+        real_validation_data_root_directory, target_image_size
+    )
+    real_validation_loader: DataLoader = DataLoader(
+        real_validation_dataset, batch_size=batch_size, shuffle=True
+    )
+    print(
+        f"{len(synthetic_validation_dataset)} synthetic validation, "
+        f"{len(real_validation_dataset)} real validation",
+        flush=True,
+    )
+
     fid_metric: FrechetInceptionDistance | None = None
-
-    if compute_validation_metrics:
-        synthetic_validation_dataset: PCBSPresGANSyntheticDataset = (
-            PCBSPresGANSyntheticDataset(
-                synthetic_validation_data_root_directory, target_image_size
-            )
-        )
-        synthetic_validation_loader = DataLoader(
-            synthetic_validation_dataset, batch_size=batch_size, shuffle=False
-        )
-        real_validation_dataset: PCBSPresGANRealDataset = PCBSPresGANRealDataset(
-            real_validation_data_root_directory, target_image_size
-        )
-        real_validation_loader = DataLoader(
-            real_validation_dataset, batch_size=batch_size, shuffle=False
-        )
-        print(
-            f"{len(synthetic_validation_dataset)} synthetic validation, "
-            f"{len(real_validation_dataset)} real validation",
-            flush=True,
-        )
-
+    if compute_validation_fid_iou:
         fid_metric = FrechetInceptionDistance(feature=2048, normalize=False).to(device)
 
-    # define generators, discriminators and load the frozen segmentor
-    generator_in_channels: int = 3
-    if image_mask_as_generator_input:
-        generator_in_channels = 4
+    # model initialization
+    generator_in_channels: int = 4 if image_mask_as_generator_input else 3
     g_a_to_b: ResNetGenerator = ResNetGenerator(
         in_channels=generator_in_channels, out_channels=3
     ).to(device)
@@ -299,13 +322,11 @@ def train_spresgan(
 
     segmentor = load_frozen_segmentor(segmentor_model_path, device, num_classes)
 
-    # define losses
     adversarial_loss: nn.MSELoss = nn.MSELoss()
     cycle_loss: nn.L1Loss = nn.L1Loss()
     identity_loss: nn.L1Loss = nn.L1Loss()
     structure_loss_function: nn.BCEWithLogitsLoss = nn.BCEWithLogitsLoss()
 
-    # define optimizers and learning rate scheduling
     opt_g: torch.optim.Adam = torch.optim.Adam(
         list(g_a_to_b.parameters()) + list(g_b_to_a.parameters()),
         lr=learning_rate,
@@ -334,23 +355,26 @@ def train_spresgan(
         warmup_end_epoch=lambda_structure_warmup_end_epoch,
     )
 
-    # define arrays that track losses
-    g_losses: np.ndarray = np.zeros(num_epochs)
+    generator_a_losses: np.ndarray = np.zeros(num_epochs)
+    generator_b_losses: np.ndarray = np.zeros(num_epochs)
     d_a_losses: np.ndarray = np.zeros(num_epochs)
     d_b_losses: np.ndarray = np.zeros(num_epochs)
     structure_losses: np.ndarray = np.zeros(num_epochs)
 
-    # track validation metrics (stays empty if compute_validation_metrics is False)
     validation_epochs: list[int] = []
     validation_iou_values: list[float] = []
     validation_fid_values: list[float] = []
+    validation_generator_a_loss_values: list[float] = []
+    validation_generator_b_loss_values: list[float] = []
+    validation_d_a_loss_values: list[float] = []
+    validation_d_b_loss_values: list[float] = []
 
     start_epoch: int = 0
     total_epochs_ran: int = 0
     best_validation_iou: float = -float("inf")
     best_validation_fid: float = float("inf")
 
-    # load checkpoint information
+    # loading from checkpoint
     if resume_checkpoint_path is not None:
         checkpoint: dict = torch.load(resume_checkpoint_path, map_location=device)
         g_a_to_b.load_state_dict(checkpoint["g_a_to_b"])
@@ -365,7 +389,12 @@ def train_spresgan(
         total_epochs_ran = checkpoint["epoch"] + 1
         start_epoch = total_epochs_ran
 
-        g_losses[: len(checkpoint["g_losses"])] = checkpoint["g_losses"]
+        generator_a_losses[: len(checkpoint["generator_a_losses"])] = checkpoint[
+            "generator_a_losses"
+        ]
+        generator_b_losses[: len(checkpoint["generator_b_losses"])] = checkpoint[
+            "generator_b_losses"
+        ]
         d_a_losses[: len(checkpoint["d_a_losses"])] = checkpoint["d_a_losses"]
         d_b_losses[: len(checkpoint["d_b_losses"])] = checkpoint["d_b_losses"]
         if checkpoint.get("structure_losses") is not None:
@@ -376,6 +405,18 @@ def train_spresgan(
             validation_epochs = list(checkpoint["validation_epochs"])
             validation_iou_values = list(checkpoint["validation_iou_values"])
             validation_fid_values = list(checkpoint["validation_fid_values"])
+            validation_generator_a_loss_values = list(
+                checkpoint.get("validation_generator_a_loss_values", [])
+            )
+            validation_generator_b_loss_values = list(
+                checkpoint.get("validation_generator_b_loss_values", [])
+            )
+            validation_d_a_loss_values = list(
+                checkpoint.get("validation_d_a_loss_values", [])
+            )
+            validation_d_b_loss_values = list(
+                checkpoint.get("validation_d_b_loss_values", [])
+            )
         if checkpoint.get("best_validation_iou") is not None:
             best_validation_iou = checkpoint["best_validation_iou"]
         if checkpoint.get("best_validation_fid") is not None:
@@ -387,18 +428,17 @@ def train_spresgan(
         )
 
     model_name_no_epoch: str = (
-        MODEL_NAME_TEMPLATE.replace(
-            "{{ model_name }}",
-            "SPresGAN",
-        )
+        MODEL_NAME_TEMPLATE.replace("{{ model_name }}", "SPresGAN")
         .replace("{{ batch_size }}", str(batch_size))
         .replace("{{ learning_rate }}", str(learning_rate))
     )
 
     start_time: float = time.perf_counter()
 
+    # training loop
     for epoch in range(start_epoch, num_epochs):
-        epoch_g_loss: float = 0.0
+        epoch_generator_a_loss: float = 0.0
+        epoch_generator_b_loss: float = 0.0
         epoch_d_a_loss: float = 0.0
         epoch_d_b_loss: float = 0.0
         epoch_loss_structure: float = 0.0
@@ -413,15 +453,15 @@ def train_spresgan(
             mask_a: torch.Tensor = batch["mask_a"].to(device)
 
             if image_mask_as_generator_input:
-                mask_b_predicted: torch.Tensor | None = None
-                mask_b_predicted = predict_binary_mask_segmentor(segmentor, real_b)
+                mask_b_predicted: torch.Tensor = predict_binary_mask_segmentor(
+                    segmentor, real_b
+                )
 
             with torch.no_grad():
                 probe_shape: torch.Size = d_b(real_b).shape
             valid: torch.Tensor = torch.ones(probe_shape, device=device)
             fake_label: torch.Tensor = torch.zeros(probe_shape, device=device)
 
-            # train generators
             opt_g.zero_grad()
 
             if image_mask_as_generator_input:
@@ -441,47 +481,42 @@ def train_spresgan(
                 recovered_b: torch.Tensor = g_a_to_b(
                     torch.cat([fake_a, mask_b_predicted], dim=1)
                 )
-            else:
-                recovered_a: torch.Tensor = g_b_to_a(fake_b)
-                recovered_b: torch.Tensor = g_a_to_b(fake_a)
-
-            cycle_a_loss: torch.Tensor = cycle_loss(recovered_a, real_a)
-            cycle_b_loss: torch.Tensor = cycle_loss(recovered_b, real_b)
-
-            if image_mask_as_generator_input:
                 identity_a: torch.Tensor = g_b_to_a(torch.cat([real_a, mask_a], dim=1))
                 identity_b: torch.Tensor = g_a_to_b(
                     torch.cat([real_b, mask_b_predicted], dim=1)
                 )
             else:
+                recovered_a: torch.Tensor = g_b_to_a(fake_b)
+                recovered_b: torch.Tensor = g_a_to_b(fake_a)
                 identity_a: torch.Tensor = g_b_to_a(real_a)
                 identity_b: torch.Tensor = g_a_to_b(real_b)
 
+            cycle_a_loss: torch.Tensor = cycle_loss(recovered_a, real_a)
+            cycle_b_loss: torch.Tensor = cycle_loss(recovered_b, real_b)
             identity_a_loss: torch.Tensor = identity_loss(identity_a, real_a)
             identity_b_loss: torch.Tensor = identity_loss(identity_b, real_b)
 
-            g_loss: torch.Tensor = (
-                gan_a_to_b_loss
-                + gan_b_to_a_loss
-                + lambda_cycle * (cycle_a_loss + cycle_b_loss)
-                + lambda_identity * (identity_a_loss + identity_b_loss)
-            )
-
-            # add the segmentor structure loss
-            loss_structure_value: float = 0.0
             predicted_logit: torch.Tensor = predict_foreground_logit_segmentor(
                 segmentor, fake_b
             )
             loss_structure: torch.Tensor = structure_loss_function(
                 predicted_logit, mask_a
             )
-            g_loss = g_loss + curr_lambda_structure * loss_structure
-            loss_structure_value = loss_structure.item()
 
+            generator_a_loss: torch.Tensor = (
+                gan_a_to_b_loss + curr_lambda_structure * loss_structure
+            )
+            generator_b_loss: torch.Tensor = gan_b_to_a_loss
+
+            g_loss: torch.Tensor = (
+                generator_a_loss
+                + generator_b_loss
+                + lambda_cycle * (cycle_a_loss + cycle_b_loss)
+                + lambda_identity * (identity_a_loss + identity_b_loss)
+            )
             g_loss.backward()
             opt_g.step()
 
-            # train the discriminators
             opt_d.zero_grad()
 
             d_a_real_loss: torch.Tensor = adversarial_loss(d_a(real_a), valid)
@@ -501,16 +536,18 @@ def train_spresgan(
             (d_a_loss + d_b_loss).backward()
             opt_d.step()
 
-            epoch_g_loss += g_loss.item()
+            epoch_generator_a_loss += generator_a_loss.item()
+            epoch_generator_b_loss += generator_b_loss.item()
             epoch_d_a_loss += d_a_loss.item()
             epoch_d_b_loss += d_b_loss.item()
-            epoch_loss_structure += loss_structure_value
+            epoch_loss_structure += loss_structure.item()
             num_batches += 1
 
         scheduler_g.step()
         scheduler_d.step()
 
-        g_losses[epoch] = epoch_g_loss / num_batches
+        generator_a_losses[epoch] = epoch_generator_a_loss / num_batches
+        generator_b_losses[epoch] = epoch_generator_b_loss / num_batches
         d_a_losses[epoch] = epoch_d_a_loss / num_batches
         d_b_losses[epoch] = epoch_d_b_loss / num_batches
         structure_losses[epoch] = epoch_loss_structure / num_batches
@@ -521,7 +558,9 @@ def train_spresgan(
 
         print(
             (
-                f"Epoch {epoch + 1}/{num_epochs}: g_loss={g_losses[epoch]:.4f} "
+                f"Epoch {epoch + 1}/{num_epochs}: "
+                f"generator_a_loss={generator_a_losses[epoch]:.4f} "
+                f"generator_b_loss={generator_b_losses[epoch]:.4f} "
                 f"d_a_loss={d_a_losses[epoch]:.4f} d_b_loss={d_b_losses[epoch]:.4f} "
                 f"loss_structure={structure_losses[epoch]:.4f} "
                 f"lambda_structure={curr_lambda_structure:.4f} "
@@ -530,45 +569,68 @@ def train_spresgan(
             flush=True,
         )
 
-        if compute_validation_metrics and (epoch + 1) % validation_frequency == 0:
+        if (epoch + 1) % validation_frequency == 0:
             validation_metrics: dict[str, float] = evaluate_spresgan(
                 g_a_to_b,
+                g_b_to_a,
+                d_a,
+                d_b,
                 segmentor,
                 synthetic_validation_loader,
                 real_validation_loader,
-                fid_metric,
+                adversarial_loss,
+                structure_loss_function,
+                curr_lambda_structure,
                 device,
                 image_mask_as_generator_input=image_mask_as_generator_input,
+                compute_fid_iou=compute_validation_fid_iou,
+                fid_metric=fid_metric,
             )
 
             validation_epochs.append(epoch + 1)
-            validation_iou_values.append(validation_metrics["validation_iou"])
-            validation_fid_values.append(validation_metrics["validation_fid"])
+            validation_generator_a_loss_values.append(
+                validation_metrics["validation_generator_a_loss"]
+            )
+            validation_generator_b_loss_values.append(
+                validation_metrics["validation_generator_b_loss"]
+            )
+            validation_d_a_loss_values.append(validation_metrics["validation_d_a_loss"])
+            validation_d_b_loss_values.append(validation_metrics["validation_d_b_loss"])
 
             print(
                 f"Epoch {epoch + 1} validation | "
-                f"IoU: {validation_metrics['validation_iou']:.4f} "
-                f"FID: {validation_metrics['validation_fid']:.4f}",
+                f"Gen A: {validation_metrics['validation_generator_a_loss']:.4f} "
+                f"Gen B: {validation_metrics['validation_generator_b_loss']:.4f} "
+                f"D_A: {validation_metrics['validation_d_a_loss']:.4f} "
+                f"D_B: {validation_metrics['validation_d_b_loss']:.4f}",
                 flush=True,
             )
 
-            if validation_metrics["validation_iou"] > best_validation_iou:
-                best_validation_iou = validation_metrics["validation_iou"]
+            if compute_validation_fid_iou:
+                validation_iou_values.append(validation_metrics["validation_iou"])
+                validation_fid_values.append(validation_metrics["validation_fid"])
 
                 print(
-                    f"New best validation_iou {best_validation_iou:.4f} at epoch {epoch + 1}",
+                    f"Epoch {epoch + 1} validation | "
+                    f"IoU: {validation_metrics['validation_iou']:.4f} "
+                    f"FID: {validation_metrics['validation_fid']:.4f}",
                     flush=True,
                 )
 
-            if validation_metrics["validation_fid"] < best_validation_fid:
-                best_validation_fid = validation_metrics["validation_fid"]
+                if validation_metrics["validation_iou"] > best_validation_iou:
+                    best_validation_iou = validation_metrics["validation_iou"]
+                    print(
+                        f"New best validation_iou {best_validation_iou:.4f} at epoch {epoch + 1}",
+                        flush=True,
+                    )
 
-                print(
-                    f"New best validation_fid {best_validation_fid:.4f} at epoch {epoch + 1}",
-                    flush=True,
-                )
+                if validation_metrics["validation_fid"] < best_validation_fid:
+                    best_validation_fid = validation_metrics["validation_fid"]
+                    print(
+                        f"New best validation_fid {best_validation_fid:.4f} at epoch {epoch + 1}",
+                        flush=True,
+                    )
 
-        # save checkpoint every 5 epochs
         if (epoch + 1) % 5 == 0:
             torch.save(
                 {
@@ -581,13 +643,18 @@ def train_spresgan(
                     "opt_d": opt_d.state_dict(),
                     "scheduler_g": scheduler_g.state_dict(),
                     "scheduler_d": scheduler_d.state_dict(),
-                    "g_losses": g_losses[: epoch + 1],
+                    "generator_a_losses": generator_a_losses[: epoch + 1],
+                    "generator_b_losses": generator_b_losses[: epoch + 1],
                     "d_a_losses": d_a_losses[: epoch + 1],
                     "d_b_losses": d_b_losses[: epoch + 1],
-                    "structure_losses": (structure_losses[: epoch + 1]),
+                    "structure_losses": structure_losses[: epoch + 1],
                     "validation_epochs": validation_epochs,
                     "validation_iou_values": validation_iou_values,
                     "validation_fid_values": validation_fid_values,
+                    "validation_generator_a_loss_values": validation_generator_a_loss_values,
+                    "validation_generator_b_loss_values": validation_generator_b_loss_values,
+                    "validation_d_a_loss_values": validation_d_a_loss_values,
+                    "validation_d_b_loss_values": validation_d_b_loss_values,
                     "best_validation_iou": best_validation_iou,
                     "best_validation_fid": best_validation_fid,
                 },
@@ -599,7 +666,7 @@ def train_spresgan(
 
     end_time: float = time.perf_counter()
     print(f"Total time elapsed: {(end_time - start_time):.4f}s", flush=True)
-    if compute_validation_metrics:
+    if compute_validation_fid_iou:
         print(f"Best validation IoU achieved: {best_validation_iou:.4f}", flush=True)
         print(f"Best validation FID achieved: {best_validation_fid:.4f}", flush=True)
 
@@ -619,22 +686,25 @@ def train_spresgan(
     )
 
     plot_spresgan_training_curves(
-        g_losses[:total_epochs_ran],
+        generator_a_losses[:total_epochs_ran],
+        generator_b_losses[:total_epochs_ran],
         d_a_losses[:total_epochs_ran],
         d_b_losses[:total_epochs_ran],
         structure_losses[:total_epochs_ran],
         validation_epochs,
         validation_iou_values,
         validation_fid_values,
+        validation_generator_a_loss_values,
+        validation_generator_b_loss_values,
+        validation_d_a_loss_values,
+        validation_d_b_loss_values,
         os.path.join(
             SPRESGAN_MODEL_TRAINING_CURVE_DIRECTORY,
-            TRAINING_CURVE_FILE_NAME_TEMPLATE.replace(
-                "{{ model_name }}",
-                "SPresGAN",
-            )
+            TRAINING_CURVE_FILE_NAME_TEMPLATE.replace("{{ model_name }}", "SPresGAN")
             .replace("{{ batch_size }}", str(batch_size))
             .replace("{{ learning_rate }}", str(learning_rate)),
         ),
+        compute_fid_iou=compute_validation_fid_iou,
     )
 
 
@@ -647,9 +717,9 @@ if __name__ == "__main__":
         segmentor_model_path="models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
         num_epochs=200,
         lambda_structure_start=0.0,
-        lambda_structure_end=1.5,
+        lambda_structure_end=2.0,
         lambda_structure_warmup_start_epoch=25,
         lambda_structure_warmup_end_epoch=75,
-        compute_validation_metrics=False,
+        compute_validation_fid_iou=False,
         image_mask_as_generator_input=False,
     )
