@@ -718,7 +718,9 @@ def get_rectangular_annotation_instance_mask(
     return instance_mask, annotations
 
 
-def create_segmentation_mask_visualization(mask_path: str, image_path: str) -> None:
+def create_segmentation_mask_overlay_visualization(
+    mask_path: str, image_path: str
+) -> None:
     mask: Optional[np.ndarray] = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
     if mask is None:
         raise FileNotFoundError(f"{mask_path} does not exist or could not be read.")
@@ -756,6 +758,30 @@ def create_segmentation_mask_visualization(mask_path: str, image_path: str) -> N
 
     cv2.imwrite(overlay_path, overlay)
     print(f"Visualization overlay saved to {overlay_path}")
+
+
+def create_semantic_mask_visualization(mask_path: str, output_directory: str) -> None:
+    mask: Optional[np.ndarray] = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
+    if mask is None:
+        raise FileNotFoundError(f"{mask_path} does not exist or could not be read.")
+
+    max_instance_id: int = int(mask.max())
+
+    rng: np.random.Generator = np.random.default_rng(seed=0)
+    colours: np.ndarray = rng.integers(
+        0, 255, size=(max_instance_id + 1, 3), dtype=np.uint8
+    )
+    colours[0] = 0  # background (instance id 0) stays black
+
+    colorized_mask: np.ndarray = colours[mask]  # (H, W, 3)
+
+    mask_filename: str = os.path.splitext(os.path.basename(mask_path))[0]
+    colourized_path: str = os.path.join(
+        output_directory, f"{mask_filename}_colourized.png"
+    )
+
+    cv2.imwrite(colourized_path, colorized_mask)
+    print(f"Colourized mask saved to {colourized_path}")
 
 
 def create_semantic_mask(
@@ -810,7 +836,9 @@ def process_pcb(
         with open(annotations_path, "w", encoding="utf-8") as f:
             json.dump(annotations, f, indent=2)
 
-        create_segmentation_mask_visualization(segmentation_mask_path, image_path)
+        create_segmentation_mask_overlay_visualization(
+            segmentation_mask_path, image_path
+        )
 
         semantic_mask_path: str = f"{output_directory}/{side}_semantic_mask.png"
         create_semantic_mask(
@@ -950,11 +978,11 @@ def split_dataset(
 
 
 if __name__ == "__main__":
-    # wx.Log.SetLogLevel(wx.LOG_Error)
-    # app: wx.App = wx.App(False)
-    # process_multiple_pcbs(
-    #     "data/open-schematics", "data/synthetic", 1, 2500, process_both_sides=False
-    # )
+    wx.Log.SetLogLevel(wx.LOG_Error)
+    app: wx.App = wx.App(False)
+    process_multiple_pcbs(
+        "data/open-schematics", "data/synthetic", 1, 2500, process_both_sides=False
+    )
     split_dataset(
         "data/synthetic",
         "data/synthetic_split/train",

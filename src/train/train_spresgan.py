@@ -286,13 +286,16 @@ def train_spresgan(
         )
     )
     synthetic_validation_loader: DataLoader = DataLoader(
-        synthetic_validation_dataset, batch_size=batch_size, shuffle=False
+        synthetic_validation_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=True,
     )
     real_validation_dataset: PCBSPresGANRealDataset = PCBSPresGANRealDataset(
         real_validation_data_root_directory, target_image_size
     )
     real_validation_loader: DataLoader = DataLoader(
-        real_validation_dataset, batch_size=batch_size, shuffle=True
+        real_validation_dataset, batch_size=batch_size, shuffle=True, drop_last=True
     )
     print(
         f"{len(synthetic_validation_dataset)} synthetic validation, "
