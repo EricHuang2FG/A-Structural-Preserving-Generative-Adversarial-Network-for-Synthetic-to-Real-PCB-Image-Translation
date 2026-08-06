@@ -1,4 +1,7 @@
 import re
+import os
+import shutil
+import subprocess
 
 from typing import TextIO
 from datasets import load_dataset, IterableDataset
@@ -10,7 +13,7 @@ def convert_to_safe_name(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", s)
 
 
-def main() -> None:
+def fetch_open_schematic() -> None:
     dataset: IterableDataset = load_dataset(
         "bshada/open-schematics",
         split="train",
@@ -19,11 +22,10 @@ def main() -> None:
     dataset = dataset.select_columns(["name", "extensions_used", "pcb_files"])
 
     data_count: int = 1
-    i: int
     row: dict
-    for i, row in enumerate(dataset):
-        if data_count <= 19999: # skip the first 85544 PCBs which are fetched already
-            continue
+    for _, row in enumerate(dataset):
+        if data_count > 3000:  # only fetch the first 3000 .kicad_pcb files
+            break
 
         if ".kicad_pcb" not in row["extensions_used"]:
             continue
@@ -49,4 +51,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    fetch_open_schematic()

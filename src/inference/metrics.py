@@ -45,6 +45,9 @@ def compute_overall_iou_fid_from_images(
 ) -> None:
     device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    print(f"mask_translated_pairs count: {len(mask_translated_pairs)}")
+    print(f"real_image_paths count: {len(real_image_paths)}")
+
     num_classes: int = len(CLASS_TO_SEMANTIC_INDEX_MAPPING)
     segmentor: UNetSegmentor = load_frozen_segmentor(
         segmentor_model_path, device, num_classes
@@ -92,10 +95,9 @@ def compute_overall_iou_fid_from_images(
 if __name__ == "__main__":
     # compute metrics for raw synthetic images
     compute_overall_iou_fid_from_images(
-        get_semantic_mask_paths_with_synthetic_data("data/synthetic_split/test"),
+        get_semantic_mask_paths_with_synthetic_data("data/external_test_datasets/synthetic"),
         get_real_image_paths("data/real_images_split/test"),
-        "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
-        compute_iou=False
+        "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model"
     )
 
     # compute metrics for CycleGAN
@@ -110,7 +112,7 @@ if __name__ == "__main__":
     # compute metrics for SPresGAN
     compute_overall_iou_fid_from_images(
         get_semantic_mask_translated_image_paths_pair(
-            "data/synthetic_split/test", "outputs/spresgan"
+            "data/external_test_datasets/synthetic", "outputs/spresgan"
         ),
         get_real_image_paths("data/real_images_split/test"),
         "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",

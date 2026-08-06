@@ -1,5 +1,7 @@
+import os
 import cv2
 import torch
+import shutil
 import numpy as np
 
 from typing import Any
@@ -40,3 +42,20 @@ def tensor_to_image_batched(tensor: torch.Tensor) -> np.ndarray:
 def normalized_tensor_to_rgb_uint8(image_tensor: torch.Tensor) -> torch.Tensor:
     # convert tensor with values normalized to [-1, 1] to an uint8 RGB tensor [0, 255]
     return ((image_tensor + 1.0) * 127.5).clamp(0, 255).to(torch.uint8)
+
+
+def clear_directory_except_gitkeep(directory: str) -> None:
+    if not os.path.isdir(directory):
+        return
+
+    entry_name: str
+    for entry_name in os.listdir(directory):
+        if entry_name == ".gitkeep":
+            continue
+
+        entry_path: str = os.path.join(directory, entry_name)
+
+        if os.path.isdir(entry_path):
+            shutil.rmtree(entry_path)
+        else:
+            os.remove(entry_path)

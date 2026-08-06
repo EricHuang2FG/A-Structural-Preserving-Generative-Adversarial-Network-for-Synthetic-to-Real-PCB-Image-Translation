@@ -15,6 +15,7 @@ from src.utils.utils import (
     mask_to_binary_tensor,
     tensor_to_image_batched,
     normalized_tensor_to_rgb_uint8,
+    clear_directory_except_gitkeep,
 )
 from src.utils.constants import TARGET_IMAGE_SIZE
 from src.data_processing.utils import get_synthetic_data_paths_with_semantic_mask
@@ -240,6 +241,7 @@ def translate_all_images_spresgan(
 ) -> None:
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     os.makedirs(output_directory, exist_ok=True)
+    clear_directory_except_gitkeep(output_directory)
 
     generator: ResNetGenerator = load_generator(
         model_path, device, image_mask_as_generator_input=image_mask_as_generator_input
@@ -270,7 +272,7 @@ def translate_all_images_spresgan(
 
 if __name__ == "__main__":
     translate_all_images_spresgan(
-        "data/synthetic_split/test",
+        "data/external_test_datasets/synthetic",
         "outputs/spresgan",
         "models/spresgan/best/SPresGAN_bs2_lr0.0002_g_a_to_b_final_l25.model",
         image_mask_as_generator_input=False,
