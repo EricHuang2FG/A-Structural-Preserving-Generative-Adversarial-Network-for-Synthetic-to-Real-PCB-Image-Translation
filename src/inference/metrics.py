@@ -1,3 +1,5 @@
+import argparse
+
 import torch
 import numpy as np
 from torchmetrics.image.fid import FrechetInceptionDistance
@@ -11,6 +13,7 @@ from src.utils.utils import (
     image_to_tensor,
     mask_to_binary_tensor,
     normalized_tensor_to_rgb_uint8,
+    parse_args_external_dataset_flag,
 )
 from src.data_processing.utils import (
     get_semantic_mask_translated_image_paths_pair,
@@ -64,7 +67,9 @@ def compute_overall_iou_fid_from_images(
         image_path: str
         for mask_path, image_path in mask_translated_pairs:
             image_tensor: torch.Tensor = (
-                image_to_tensor(image_path, size=target_image_size).unsqueeze(0).to(device)
+                image_to_tensor(image_path, size=target_image_size)
+                .unsqueeze(0)
+                .to(device)
             )
 
             predicted_binary_mask: torch.Tensor = predict_binary_mask_segmentor(
@@ -93,26 +98,44 @@ def compute_overall_iou_fid_from_images(
 
 
 if __name__ == "__main__":
-    # compute metrics for raw synthetic images
-    compute_overall_iou_fid_from_images(
-        get_semantic_mask_paths_with_synthetic_data("data/external_test_datasets/synthetic"),
-        get_real_image_paths("data/real_images_split/test"),
-        "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model"
+    args: argparse.Namespace = parse_args_external_dataset_flag(
+        "Obtain FID and IoU metrics on either the open-schematics test data or the external test dataset"
     )
 
-    # compute metrics for CycleGAN
-    compute_overall_iou_fid_from_images(
-        get_semantic_mask_translated_image_paths_pair(
-            "data/synthetic_split/test", "outputs/cyclegan/images"
-        ),
-        get_real_image_paths("data/real_images_split/test"),
-        "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
-    )
+    # # compute metrics for raw synthetic images
+    # compute_overall_iou_fid_from_images(
+    #     get_semantic_mask_paths_with_synthetic_data(
+    #         "data/external_test_datasets/synthetic"
+    #         if args.external
+    #         else "data/synthetic_split/test"
+    #     ),
+    #     get_real_image_paths("data/real_images_split/test"),
+    #     "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
+    # )
+
+    # # compute metrics for CycleGAN
+    # compute_overall_iou_fid_from_images(
+    #     get_semantic_mask_translated_image_paths_pair(
+    #         (
+    #             "data/external_test_datasets/synthetic"
+    #             if args.external
+    #             else "data/synthetic_split/test"
+    #         ),
+    #         "outputs/cyclegan/images",
+    #     ),
+    #     get_real_image_paths("data/real_images_split/test"),
+    #     "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
+    # )
 
     # compute metrics for SPresGAN
     compute_overall_iou_fid_from_images(
         get_semantic_mask_translated_image_paths_pair(
-            "data/external_test_datasets/synthetic", "outputs/spresgan"
+            (
+                "data/external_test_datasets/synthetic"
+                if args.external
+                else "data/synthetic_split/test"
+            ),
+            "outputs/spresgan",
         ),
         get_real_image_paths("data/real_images_split/test"),
         "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",

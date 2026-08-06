@@ -119,15 +119,22 @@ def plot_spresgan_training_curves(
     validation_generator_b_loss: list[float],
     validation_d_a_loss: list[float],
     validation_d_b_loss: list[float],
+    validation_structure_loss: list[float],
     output_path_template: str,  # must have {{ type }} in the string
     compute_fid_iou: bool = False,
     plot: bool = False,
 ) -> None:
     num_epochs: int = len(generator_a_loss) + 1
+    title_fontsize: int = 14
+    title_fontweight = "bold"
 
     # generator loss: A and B, training vs validation
     plt.figure()
-    plt.title("Training and Validation Generator Loss vs. Epochs")
+    plt.title(
+        "Training and Validation Generator Loss vs. Epochs",
+        fontsize=title_fontsize,
+        fontweight=title_fontweight,
+    )
     plt.plot(range(1, num_epochs), generator_a_loss, label="Generator A (Train)")
     plt.plot(range(1, num_epochs), generator_b_loss, label="Generator B (Train)")
     plt.plot(
@@ -151,7 +158,11 @@ def plot_spresgan_training_curves(
 
     # discriminator loss: A and B, training vs. validation
     plt.figure()
-    plt.title("Training and Validation Discriminator Loss vs. Epochs")
+    plt.title(
+        "Training and Validation Discriminator Loss vs. Epochs",
+        fontsize=title_fontsize,
+        fontweight=title_fontweight,
+    )
     plt.plot(
         range(1, num_epochs), discriminator_a_loss, label="Discriminator A (Train)"
     )
@@ -177,10 +188,20 @@ def plot_spresgan_training_curves(
     if plot:
         plt.show()
 
-    # structural loss
+    # structural loss: training vs validation
     plt.figure()
-    plt.title("Structural Loss Loss vs. Epochs")
-    plt.plot(range(1, num_epochs), structural_loss, label="Structure Loss")
+    plt.title(
+        "Training and Validation Structural Loss vs. Epochs",
+        fontsize=title_fontsize,
+        fontweight=title_fontweight,
+    )
+    plt.plot(range(1, num_epochs), structural_loss, label="Structure Loss (Train)")
+    plt.plot(
+        validation_epochs,
+        validation_structure_loss,
+        label="Structure Loss (Validation)",
+        marker="o",
+    )
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.legend(loc="best")
@@ -190,7 +211,11 @@ def plot_spresgan_training_curves(
 
     if compute_fid_iou:
         plt.figure()
-        plt.title("Validation Segmentor IoU vs. Epochs")
+        plt.title(
+            "Validation Segmentor IoU vs. Epochs",
+            fontsize=title_fontsize,
+            fontweight=title_fontweight,
+        )
         plt.plot(validation_epochs, validation_iou, label="Validation IoU", marker="o")
         plt.xlabel("Epoch")
         plt.ylabel("IoU")
@@ -200,7 +225,11 @@ def plot_spresgan_training_curves(
             plt.show()
 
         plt.figure()
-        plt.title("Validation FID vs. Epochs")
+        plt.title(
+            "Validation FID vs. Epochs",
+            fontsize=title_fontsize,
+            fontweight=title_fontweight,
+        )
         plt.plot(validation_epochs, validation_fid, label="Validation FID", marker="o")
         plt.xlabel("Epoch")
         plt.ylabel("FID")
@@ -224,8 +253,37 @@ def plot_spresgan_training_curves(
         "validation_generator_b_loss": np.array(validation_generator_b_loss),
         "validation_d_a_loss": np.array(validation_d_a_loss),
         "validation_d_b_loss": np.array(validation_d_b_loss),
+        "validation_structure_loss": np.array(validation_structure_loss),
     }
     np.savez(metrics_path, **metrics_mapping)
+
+
+def plot_spresgan_training_curves_from_npz(
+    npz_path: str,
+    output_path_template: str,  # must have {{ type }} in the string
+    compute_fid_iou: bool = False,
+    plot: bool = False,
+) -> None:
+    data = np.load(npz_path)
+
+    plot_spresgan_training_curves(
+        generator_a_loss=data["generator_a_loss"],
+        generator_b_loss=data["generator_b_loss"],
+        discriminator_a_loss=data["discriminator_a_loss"],
+        discriminator_b_loss=data["discriminator_b_loss"],
+        structural_loss=data["structure_loss"],
+        validation_epochs=data["validation_epochs"].tolist(),
+        validation_iou=data["validation_iou"].tolist(),
+        validation_fid=data["validation_fid"].tolist(),
+        validation_generator_a_loss=data["validation_generator_a_loss"].tolist(),
+        validation_generator_b_loss=data["validation_generator_b_loss"].tolist(),
+        validation_d_a_loss=data["validation_d_a_loss"].tolist(),
+        validation_d_b_loss=data["validation_d_b_loss"].tolist(),
+        validation_structure_loss=data["validation_structure_loss"].tolist(),
+        output_path_template=output_path_template,
+        compute_fid_iou=compute_fid_iou,
+        plot=plot,
+    )
 
 
 def train_spresgan(
@@ -381,6 +439,7 @@ def train_spresgan(
     validation_generator_b_loss_values: list[float] = []
     validation_d_a_loss_values: list[float] = []
     validation_d_b_loss_values: list[float] = []
+    validation_structure_loss_values: list[float] = []
 
     start_epoch: int = 0
     total_epochs_ran: int = 0
@@ -429,6 +488,9 @@ def train_spresgan(
             )
             validation_d_b_loss_values = list(
                 checkpoint.get("validation_d_b_loss_values", [])
+            )
+            validation_structure_loss_values = list(
+                checkpoint.get("validation_structure_loss_values", [])
             )
         if checkpoint.get("best_validation_iou") is not None:
             best_validation_iou = checkpoint["best_validation_iou"]
@@ -609,13 +671,17 @@ def train_spresgan(
             )
             validation_d_a_loss_values.append(validation_metrics["validation_d_a_loss"])
             validation_d_b_loss_values.append(validation_metrics["validation_d_b_loss"])
+            validation_structure_loss_values.append(
+                validation_metrics["validation_structure_loss"]
+            )
 
             print(
                 f"Epoch {epoch + 1} validation | "
                 f"Gen A: {validation_metrics['validation_generator_a_loss']:.4f} "
                 f"Gen B: {validation_metrics['validation_generator_b_loss']:.4f} "
                 f"D_A: {validation_metrics['validation_d_a_loss']:.4f} "
-                f"D_B: {validation_metrics['validation_d_b_loss']:.4f}",
+                f"D_B: {validation_metrics['validation_d_b_loss']:.4f} "
+                f"Structure: {validation_metrics['validation_structure_loss']:.4f}",
                 flush=True,
             )
 
@@ -668,6 +734,7 @@ def train_spresgan(
                     "validation_generator_b_loss_values": validation_generator_b_loss_values,
                     "validation_d_a_loss_values": validation_d_a_loss_values,
                     "validation_d_b_loss_values": validation_d_b_loss_values,
+                    "validation_structure_loss_values": validation_structure_loss_values,  # NEW
                     "best_validation_iou": best_validation_iou,
                     "best_validation_fid": best_validation_fid,
                 },
@@ -699,19 +766,20 @@ def train_spresgan(
     )
 
     plot_spresgan_training_curves(
-        generator_a_losses[:total_epochs_ran],
-        generator_b_losses[:total_epochs_ran],
-        d_a_losses[:total_epochs_ran],
-        d_b_losses[:total_epochs_ran],
-        structure_losses[:total_epochs_ran],
-        validation_epochs,
-        validation_iou_values,
-        validation_fid_values,
-        validation_generator_a_loss_values,
-        validation_generator_b_loss_values,
-        validation_d_a_loss_values,
-        validation_d_b_loss_values,
-        os.path.join(
+        generator_a_loss=generator_a_losses[:total_epochs_ran],
+        generator_b_loss=generator_b_losses[:total_epochs_ran],
+        discriminator_a_loss=d_a_losses[:total_epochs_ran],
+        discriminator_b_loss=d_b_losses[:total_epochs_ran],
+        structural_loss=structure_losses[:total_epochs_ran],
+        validation_epochs=validation_epochs,
+        validation_iou=validation_iou_values,
+        validation_fid=validation_fid_values,
+        validation_generator_a_loss=validation_generator_a_loss_values,
+        validation_generator_b_loss=validation_generator_b_loss_values,
+        validation_d_a_loss=validation_d_a_loss_values,
+        validation_d_b_loss=validation_d_b_loss_values,
+        validation_structure_loss=validation_structure_loss_values,
+        output_path_template=os.path.join(
             SPRESGAN_MODEL_TRAINING_CURVE_DIRECTORY,
             TRAINING_CURVE_FILE_NAME_TEMPLATE.replace("{{ model_name }}", "SPresGAN")
             .replace("{{ batch_size }}", str(batch_size))
@@ -730,7 +798,7 @@ if __name__ == "__main__":
         segmentor_model_path="models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
         num_epochs=200,
         lambda_structure_start=0.0,
-        lambda_structure_end=2.0,
+        lambda_structure_end=2.5,
         lambda_structure_warmup_start_epoch=25,
         lambda_structure_warmup_end_epoch=75,
         compute_validation_fid_iou=False,

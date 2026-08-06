@@ -1,4 +1,5 @@
 import os
+import argparse
 
 import cv2
 import torch
@@ -16,6 +17,7 @@ from src.utils.utils import (
     tensor_to_image_batched,
     normalized_tensor_to_rgb_uint8,
     clear_directory_except_gitkeep,
+    parse_args_external_dataset_flag,
 )
 from src.utils.constants import TARGET_IMAGE_SIZE
 from src.data_processing.utils import get_synthetic_data_paths_with_semantic_mask
@@ -271,10 +273,17 @@ def translate_all_images_spresgan(
 
 
 if __name__ == "__main__":
+    args: argparse.Namespace = parse_args_external_dataset_flag(
+        "Run SPresGAN inference on either the primary open-schematic dataset of the external test dataset"
+    )
     translate_all_images_spresgan(
-        "data/external_test_datasets/synthetic",
+        (
+            "data/external_test_datasets/synthetic"
+            if args.external
+            else "data/synthetic_split/test"
+        ),
         "outputs/spresgan",
-        "models/spresgan/best/SPresGAN_bs2_lr0.0002_g_a_to_b_final_l25.model",
+        "models/spresgan/best/SPresGAN_bs2_lr0.0002_g_a_to_b_final_l20.model",
         image_mask_as_generator_input=False,
         target_image_size=TARGET_IMAGE_SIZE,
     )

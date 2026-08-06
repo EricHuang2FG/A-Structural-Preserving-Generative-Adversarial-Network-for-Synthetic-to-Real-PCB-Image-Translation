@@ -3,6 +3,7 @@ import time
 import json
 import shutil
 import random
+import argparse
 import tempfile
 import subprocess
 
@@ -28,6 +29,7 @@ from src.utils.constants import (
     DEFAULT_CLASS,
     SEED,
 )
+from src.utils.utils import parse_args_external_dataset_flag
 
 
 def iu_to_mm(val: int) -> float:
@@ -978,21 +980,27 @@ def split_dataset(
 
 
 if __name__ == "__main__":
+    args: argparse.Namespace = parse_args_external_dataset_flag(
+        "Process synthetic images for either open-schematics or the external test dataset"
+    )
     wx.Log.SetLogLevel(wx.LOG_Error)
     app: wx.App = wx.App(False)
-    # process_multiple_pcbs(
-    #     "data/open-schematics", "data/synthetic", 1, 2500, process_both_sides=False
-    # )
-    process_multiple_pcbs(
-        "data/external_test_datasets/kicad_pcb",
-        "data/external_test_datasets/synthetic",
-        1,
-        31,
-        process_both_sides=False,
-    )
-    # split_dataset(
-    #     "data/synthetic",
-    #     "data/synthetic_split/train",
-    #     "data/synthetic_split/validation",
-    #     "data/synthetic_split/test",
-    # )
+
+    if not args.external:
+        process_multiple_pcbs(
+            "data/open-schematics", "data/synthetic", 1, 2500, process_both_sides=False
+        )
+        split_dataset(
+            "data/synthetic",
+            "data/synthetic_split/train",
+            "data/synthetic_split/validation",
+            "data/synthetic_split/test",
+        )
+    else:
+        process_multiple_pcbs(
+            "data/external_test_datasets/kicad_pcb",
+            "data/external_test_datasets/synthetic",
+            1,
+            31,
+            process_both_sides=False,
+        )

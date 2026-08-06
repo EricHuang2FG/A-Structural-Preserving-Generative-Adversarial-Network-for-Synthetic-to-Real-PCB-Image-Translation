@@ -53,7 +53,7 @@ def copy_pcb_files(
 
     pcb_path: str
     for pcb_path in pcb_paths:
-        if counter in [16, 18, 20, 24]:  # skip known invalid data
+        if counter in [16, 18, 20]:  # skip known invalid data
             counter += 1
             continue
 
