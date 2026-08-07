@@ -69,7 +69,6 @@ or it could be downloaded [here](https://drive.google.com/drive/folders/1yBO6M3f
 ```bash
 python -m src.train.train_spresgan
 ```
-The trained 
 
 ## Producing Image Translations
 
