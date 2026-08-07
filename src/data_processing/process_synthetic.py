@@ -29,7 +29,7 @@ from src.utils.constants import (
     DEFAULT_CLASS,
     SEED,
 )
-from src.utils.utils import parse_args_external_dataset_flag
+from src.utils.args import parse_args_external_dataset_flag
 
 
 def iu_to_mm(val: int) -> float:

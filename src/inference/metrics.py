@@ -13,8 +13,8 @@ from src.utils.utils import (
     image_to_tensor,
     mask_to_binary_tensor,
     normalized_tensor_to_rgb_uint8,
-    parse_args_external_dataset_flag,
 )
+from src.utils.args import parse_args_external_dataset_flag
 from src.data_processing.utils import (
     get_semantic_mask_translated_image_paths_pair,
     get_semantic_mask_paths_with_synthetic_data,
@@ -102,30 +102,30 @@ if __name__ == "__main__":
         "Obtain FID and IoU metrics on either the open-schematics test data or the external test dataset"
     )
 
-    # # compute metrics for raw synthetic images
-    # compute_overall_iou_fid_from_images(
-    #     get_semantic_mask_paths_with_synthetic_data(
-    #         "data/external_test_datasets/synthetic"
-    #         if args.external
-    #         else "data/synthetic_split/test"
-    #     ),
-    #     get_real_image_paths("data/real_images_split/test"),
-    #     "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
-    # )
+    # compute metrics for raw synthetic images
+    compute_overall_iou_fid_from_images(
+        get_semantic_mask_paths_with_synthetic_data(
+            "data/external_test_datasets/synthetic"
+            if args.external
+            else "data/synthetic_split/test"
+        ),
+        get_real_image_paths("data/real_images_split/test"),
+        "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
+    )
 
-    # # compute metrics for CycleGAN
-    # compute_overall_iou_fid_from_images(
-    #     get_semantic_mask_translated_image_paths_pair(
-    #         (
-    #             "data/external_test_datasets/synthetic"
-    #             if args.external
-    #             else "data/synthetic_split/test"
-    #         ),
-    #         "outputs/cyclegan/images",
-    #     ),
-    #     get_real_image_paths("data/real_images_split/test"),
-    #     "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
-    # )
+    # compute metrics for CycleGAN
+    compute_overall_iou_fid_from_images(
+        get_semantic_mask_translated_image_paths_pair(
+            (
+                "data/external_test_datasets/synthetic"
+                if args.external
+                else "data/synthetic_split/test"
+            ),
+            "outputs/cyclegan/images",
+        ),
+        get_real_image_paths("data/real_images_split/test"),
+        "models/segmentor/best/UNetSegmentor_BaseChannels128_bs8_lr0.001_best.model",
+    )
 
     # compute metrics for SPresGAN
     compute_overall_iou_fid_from_images(

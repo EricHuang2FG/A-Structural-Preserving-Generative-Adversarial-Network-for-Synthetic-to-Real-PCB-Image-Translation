@@ -2,7 +2,6 @@ import os
 import cv2
 import torch
 import shutil
-import argparse
 import numpy as np
 
 from typing import Any
@@ -60,13 +59,3 @@ def clear_directory_except_gitkeep(directory: str) -> None:
             shutil.rmtree(entry_path)
         else:
             os.remove(entry_path)
-
-
-def parse_args_external_dataset_flag(description: str) -> argparse.Namespace:
-    parser: argparse.ArgumentParser = argparse.ArgumentParser(description=description)
-    parser.add_argument(
-        "--external",
-        action="store_true",
-        help="Use the external test dataset instead of the standard open-schematic dataset.",
-    )
-    return parser.parse_args()

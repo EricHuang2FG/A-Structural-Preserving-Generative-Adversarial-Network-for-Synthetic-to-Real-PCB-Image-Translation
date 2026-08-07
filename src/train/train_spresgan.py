@@ -33,6 +33,10 @@ from src.utils.constants import (
     CLASS_TO_SEMANTIC_INDEX_MAPPING,
     MODEL_NAME_TEMPLATE,
     TRAINING_CURVE_FILE_NAME_TEMPLATE,
+    TITLE_FONTSIZE,
+    TITLE_FONTWEIGHT,
+    AXIS_LABEL_FONTSIZE,
+    LEGEND_FONTSIZE,
 )
 
 
@@ -125,15 +129,13 @@ def plot_spresgan_training_curves(
     plot: bool = False,
 ) -> None:
     num_epochs: int = len(generator_a_loss) + 1
-    title_fontsize: int = 14
-    title_fontweight = "bold"
 
     # generator loss: A and B, training vs validation
     plt.figure()
     plt.title(
         "Training and Validation Generator Loss vs. Epochs",
-        fontsize=title_fontsize,
-        fontweight=title_fontweight,
+        fontsize=TITLE_FONTSIZE,
+        fontweight=TITLE_FONTWEIGHT,
     )
     plt.plot(range(1, num_epochs), generator_a_loss, label="Generator A (Train)")
     plt.plot(range(1, num_epochs), generator_b_loss, label="Generator B (Train)")
@@ -149,9 +151,9 @@ def plot_spresgan_training_curves(
         label="Generator B (Validation)",
         marker="o",
     )
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend(loc="best")
+    plt.xlabel("Epoch", fontweight=TITLE_FONTWEIGHT, fontsize=AXIS_LABEL_FONTSIZE)
+    plt.ylabel("Loss", fontweight=TITLE_FONTWEIGHT, fontsize=AXIS_LABEL_FONTSIZE)
+    plt.legend(loc="best", fontsize=LEGEND_FONTSIZE)
     plt.savefig(output_path_template.replace("{{ type }}", "generator_loss"))
     if plot:
         plt.show()
@@ -160,8 +162,8 @@ def plot_spresgan_training_curves(
     plt.figure()
     plt.title(
         "Training and Validation Discriminator Loss vs. Epochs",
-        fontsize=title_fontsize,
-        fontweight=title_fontweight,
+        fontsize=TITLE_FONTSIZE,
+        fontweight=TITLE_FONTWEIGHT,
     )
     plt.plot(
         range(1, num_epochs), discriminator_a_loss, label="Discriminator A (Train)"
@@ -181,19 +183,19 @@ def plot_spresgan_training_curves(
         label="Discriminator B (Validation)",
         marker="o",
     )
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend(loc="best")
+    plt.xlabel("Epoch", fontweight=TITLE_FONTWEIGHT, fontsize=AXIS_LABEL_FONTSIZE)
+    plt.ylabel("Loss", fontweight=TITLE_FONTWEIGHT, fontsize=AXIS_LABEL_FONTSIZE)
+    plt.legend(loc="best", fontsize=LEGEND_FONTSIZE)
     plt.savefig(output_path_template.replace("{{ type }}", "discriminator_loss"))
     if plot:
         plt.show()
 
-    # structural loss: training vs validation
+    # structure loss
     plt.figure()
     plt.title(
-        "Training and Validation Structural Loss vs. Epochs",
-        fontsize=title_fontsize,
-        fontweight=title_fontweight,
+        "Training and Validation Structure Loss vs. Epochs",
+        fontsize=TITLE_FONTSIZE,
+        fontweight=TITLE_FONTWEIGHT,
     )
     plt.plot(range(1, num_epochs), structural_loss, label="Structure Loss (Train)")
     plt.plot(
@@ -202,9 +204,9 @@ def plot_spresgan_training_curves(
         label="Structure Loss (Validation)",
         marker="o",
     )
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend(loc="best")
+    plt.xlabel("Epoch", fontweight=TITLE_FONTWEIGHT, fontsize=AXIS_LABEL_FONTSIZE)
+    plt.ylabel("Loss", fontweight=TITLE_FONTWEIGHT, fontsize=AXIS_LABEL_FONTSIZE)
+    plt.legend(loc="best", fontsize=LEGEND_FONTSIZE)
     plt.savefig(output_path_template.replace("{{ type }}", "structure_loss"))
     if plot:
         plt.show()
@@ -213,13 +215,13 @@ def plot_spresgan_training_curves(
         plt.figure()
         plt.title(
             "Validation Segmentor IoU vs. Epochs",
-            fontsize=title_fontsize,
-            fontweight=title_fontweight,
+            fontsize=TITLE_FONTSIZE,
+            fontweight=TITLE_FONTWEIGHT,
         )
         plt.plot(validation_epochs, validation_iou, label="Validation IoU", marker="o")
-        plt.xlabel("Epoch")
-        plt.ylabel("IoU")
-        plt.legend(loc="best")
+        plt.xlabel("Epoch", fontweight=TITLE_FONTWEIGHT, fontsize=AXIS_LABEL_FONTSIZE)
+        plt.ylabel("IoU", fontweight=TITLE_FONTWEIGHT, fontsize=AXIS_LABEL_FONTSIZE)
+        plt.legend(loc="best", fontsize=LEGEND_FONTSIZE)
         plt.savefig(output_path_template.replace("{{ type }}", "validation_iou"))
         if plot:
             plt.show()
@@ -227,13 +229,13 @@ def plot_spresgan_training_curves(
         plt.figure()
         plt.title(
             "Validation FID vs. Epochs",
-            fontsize=title_fontsize,
-            fontweight=title_fontweight,
+            fontsize=TITLE_FONTSIZE,
+            fontweight=TITLE_FONTWEIGHT,
         )
         plt.plot(validation_epochs, validation_fid, label="Validation FID", marker="o")
-        plt.xlabel("Epoch")
-        plt.ylabel("FID")
-        plt.legend(loc="best")
+        plt.xlabel("Epoch", fontweight=TITLE_FONTWEIGHT, fontsize=AXIS_LABEL_FONTSIZE)
+        plt.ylabel("FID", fontweight=TITLE_FONTWEIGHT, fontsize=AXIS_LABEL_FONTSIZE)
+        plt.legend(loc="best", fontsize=LEGEND_FONTSIZE)
         plt.savefig(output_path_template.replace("{{ type }}", "validation_fid"))
         if plot:
             plt.show()

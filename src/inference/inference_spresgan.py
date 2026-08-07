@@ -17,8 +17,8 @@ from src.utils.utils import (
     tensor_to_image_batched,
     normalized_tensor_to_rgb_uint8,
     clear_directory_except_gitkeep,
-    parse_args_external_dataset_flag,
 )
+from src.utils.args import parse_args_external_dataset_flag
 from src.utils.constants import TARGET_IMAGE_SIZE
 from src.data_processing.utils import get_synthetic_data_paths_with_semantic_mask
 from src.inference.metrics import binary_iou
@@ -283,7 +283,7 @@ if __name__ == "__main__":
             else "data/synthetic_split/test"
         ),
         "outputs/spresgan",
-        "models/spresgan/best/SPresGAN_bs2_lr0.0002_g_a_to_b_final_l20.model",
+        "models/spresgan/best/SPresGAN_bs2_lr0.0002_g_a_to_b_final_l25.model",
         image_mask_as_generator_input=False,
         target_image_size=TARGET_IMAGE_SIZE,
     )

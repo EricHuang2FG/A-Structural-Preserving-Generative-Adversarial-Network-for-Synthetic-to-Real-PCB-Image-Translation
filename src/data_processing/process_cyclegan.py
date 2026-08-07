@@ -2,7 +2,7 @@ import os
 import shutil
 import argparse
 
-from src.utils.utils import parse_args_external_dataset_flag
+from src.utils.args import parse_args_external_dataset_flag
 
 
 def process_cyclegan_dataset(

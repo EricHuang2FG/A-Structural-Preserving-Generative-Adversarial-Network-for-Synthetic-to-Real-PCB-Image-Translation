@@ -47,6 +47,11 @@ CLASS_TO_SEMANTIC_INDEX_MAPPING: dict[str, int] = {
 SEED: int = 42
 EARLY_STOPPING_PATIENCE: int = 6
 
+TITLE_FONTSIZE: int = 14
+TITLE_FONTWEIGHT: str = "bold"
+AXIS_LABEL_FONTSIZE: int = 13
+LEGEND_FONTSIZE: int = 12
+
 MODEL_NAME_TEMPLATE: str = (
     "{{ model_name }}_bs{{ batch_size }}_lr{{ learning_rate }}_epoch{{ epoch }}.model"
 )
